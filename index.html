@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="https://telegram.org/js/telegram-web-app.js?57"></script>
+    <script>
+        function inTelegramWebApp() {
+            return Telegram.WebApp.initData !== '';
+        }
+
+        function showMessage(title, text) {
+            if (inTelegramWebApp()) {
+                alert(text);
+                return;
+            }
+            Telegram.WebApp.showPopup({
+                title: title,
+                message: text,
+                buttons: [
+                    {text: "确认", type: "default", id: "confirm"}
+                ],
+            }, (buttonId) => {
+                Telegram.WebApp.close();
+            });
+        }
+
+        const verifyUrl = `DIO_VERIFY_URL`;
+        window.onloadTurnstileCallback = function () {
+            turnstile.render("#cf-turnstile", {
+                sitekey: "1x00000000000000000000AA", // 建议换成你自己的
+                theme: "light",
+                size: "normal", // "normal", "compact", or "invisible"
+                callback: function (token) {
+                    console.log(`Challenge Success: ${token}`);
+                    fetch(verifyUrl, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Authorization": "Telegram " + Telegram.WebApp.initData,
+                        },
+                        body: JSON.stringify({"token": token})
+                    }).then(resp => {
+                        resp.json().then(data => {
+                            console.log(data);
+                            if (data.success) {
+                                document.getElementById("cf-turnstile").innerHTML = `<div>Success</div>`;
+                                Telegram.WebApp.close();
+                            } else {
+                                document.getElementById("cf-turnstile").innerHTML = `<div>Error</div>`;
+                                showMessage("验证错误", "错误: " + data.error)
+                            }
+
+                        }).catch(err => {
+                            console.log(err);
+                            showMessage("验证状态异常", "错误: " + err);
+                        })
+                    }).catch(err => {
+                        console.error(err)
+                        showMessage("验证状态异常", "错误: " + err);
+                    }).finally(() => {
+                        if (!inTelegramWebApp()) {
+                            alert("这里应该退出了，不过现在在测试，或者您没有在telegram中打开");
+                        }
+                    });
+                }
+            });
+        };
+    </script>
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback&render=explicit"
+            async defer></script>
+    <title>Telegram Human Verify</title>
+    <style>
+        #cf-turnstile {
+            margin: 40px auto;
+            width: 100%;
+            max-width: 300px;
+            min-height: 65px; /* 防止看不到 */
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+<div id="cf-turnstile"></div>
+</body>
+</html>
