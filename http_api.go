@@ -160,7 +160,7 @@ func verifyHeader(ctx *gin.Context) {
 		ctx.AbortWithStatusJSON(401, hErr("数据过期，该网页验证时长已超过5分钟，需要重新打开网页验证"))
 		return
 	}
-	log.Printf("[verifyHeader] 通过用户验证: %+v", auth.User)
+	log.Printf("[verifyHeader] 通过用户验证: %d", auth.User.Id)
 	ctx.Set("auth", auth)
 	ctx.Next()
 }
@@ -209,14 +209,24 @@ func verifyTurnstile(ctx *gin.Context) {
 	defer resp.Body.Close()
 
 	auth := ctx.MustGet("auth").(AuthInfo)
-	e, ok := userStatus.Load(auth.User.Id)
-	if !ok || e == nil {
-		log.Printf("[verifyTurnstile] 找不到用户 %d 的验证请求", auth.User.Id)
-		ctx.AbortWithStatusJSON(401, hErr("没有您的验证请求"))
-		return
+	event, ok := userStatus.LoadOrStore(auth.User.Id, &UserJoinEvent{
+		mu:            sync.Mutex{},
+		timer:         nil,
+		UserId:        0,
+		ReqTime:       time.Time{},
+		JoiningGroups: nil,
+		CurrentState:  userVerifying,
+	})
+	if !ok {
+		log.Printf("[verifyTurnstile] 用户未加载，但bot强行开始验证: %d", event.UserId)
+		event.mu.Lock()
+		event.ReqTime = time.Now()
+		event.UserId = auth.User.Id
+		event.timer = time.AfterFunc(time.Hour*12, func() {
+			userStatus.Delete(event.UserId)
+		})
+		event.mu.Unlock()
 	}
-	event := e.(*UserJoinEvent)
-
 	var data TurnstileResp
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		log.Printf("[verifyTurnstile] JSON 解码失败: %v", err)
@@ -234,9 +244,9 @@ func verifyTurnstile(ctx *gin.Context) {
 	log.Printf("[verifyTurnstile] 用户 %d 人类验证通过", auth.User.Id)
 	ctx.JSON(http.StatusOK, gin.H{"success": true, "data": "人类验证成功！"})
 	event.mu.Lock()
-	defer event.mu.Unlock()
-	event.CurrentState = userVerifySilent
-	event.ResetTimerWithLock()
+	event.CurrentState = userVerifySucceed
+	event.mu.Unlock()
+	event.Approve()
 }
 
 func mainPage(ctx *gin.Context) {
