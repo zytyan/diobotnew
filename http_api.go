@@ -210,22 +210,15 @@ func verifyTurnstile(ctx *gin.Context) {
 
 	auth := ctx.MustGet("auth").(AuthInfo)
 	event, ok := userStatus.LoadOrStore(auth.User.Id, &UserJoinEvent{
-		mu:            sync.Mutex{},
-		timer:         nil,
-		UserId:        0,
-		ReqTime:       time.Time{},
-		JoiningGroups: nil,
-		CurrentState:  userVerifying,
+		mu:           sync.Mutex{},
+		deleteTimer:  nil,
+		UserId:       0,
+		ReqTime:      time.Time{},
+		CurrentState: userVerifying,
 	})
 	if !ok {
 		log.Printf("[verifyTurnstile] 用户未加载，但bot强行开始验证: %d", event.UserId)
-		event.mu.Lock()
-		event.ReqTime = time.Now()
-		event.UserId = auth.User.Id
-		event.timer = time.AfterFunc(time.Hour*12, func() {
-			userStatus.Delete(event.UserId)
-		})
-		event.mu.Unlock()
+		event.Init(auth.User.Id)
 	}
 	var data TurnstileResp
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
@@ -236,17 +229,14 @@ func verifyTurnstile(ctx *gin.Context) {
 
 	if !data.Success {
 		log.Printf("[verifyTurnstile] Turnstile 验证失败: %v", data.ErrorCodes)
-		event.CurrentState = userVerifyFailed
+		event.SetState(userVerifyFailed)
 		ctx.AbortWithStatusJSON(401, hErr("人类验证失败！"))
 		return
 	}
 
 	log.Printf("[verifyTurnstile] 用户 %d 人类验证通过", auth.User.Id)
 	ctx.JSON(http.StatusOK, gin.H{"success": true, "data": "人类验证成功！"})
-	event.mu.Lock()
-	event.CurrentState = userVerifySucceed
-	event.mu.Unlock()
-	event.Approve()
+	event.SetState(userVerifySucceed)
 }
 
 func mainPage(ctx *gin.Context) {

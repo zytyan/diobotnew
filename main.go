@@ -15,7 +15,6 @@ import (
 )
 
 var botToken = os.Getenv("BOT_TOKEN")
-var tgBot *gotgbot.Bot
 
 // This bot is as basic as it gets - it simply repeats everything you say.
 // The main_test.go file contains example code to demonstrate how to implement the gotgbot.BotClient interface for it to be used in tests.
@@ -36,7 +35,6 @@ func main() {
 	if err != nil {
 		panic("failed to create new bot: " + err.Error())
 	}
-	tgBot = b
 	// Create updater and dispatcher.
 	dispatcher := ext.NewDispatcher(&ext.DispatcherOpts{
 		// If an error is returned by a handler, log it and continue going.
@@ -52,7 +50,7 @@ func main() {
 	dispatcher.AddHandler(handlers.NewChatMember(isUserLeft, showGoodbyeMessageToChat))
 	dispatcher.AddHandler(handlers.NewChatMember(isUserBanned, showBannedMessageToChat))
 	dispatcher.AddHandler(handlers.NewChatMember(isUserJoinedByLink, showWelcomeMessageToUserJoinedByLink))
-	dispatcher.AddHandler(handlers.NewMessage(nil, handleAnyNewMsg))
+	dispatcher.AddHandler(handlers.NewMessage(isGroupMessage, handleAnyNewMsg))
 	dispatcher.AddHandler(handlers.NewChatJoinRequest(nil, JoinRequestsHandler))
 	// Start receiving updates.
 	err = updater.StartPolling(b, &ext.PollingOpts{
@@ -75,9 +73,14 @@ func main() {
 }
 
 func isInvitedByOtherMember(u *gotgbot.ChatMemberUpdated) bool {
-	_, ok := u.NewChatMember.(gotgbot.ChatMemberMember)
-	// 没有邀请链接，就说明是从其他用户邀请来的
-	return ok && u.InviteLink == nil
+	_, ok1 := u.OldChatMember.(gotgbot.ChatMemberLeft)
+	_, ok2 := u.OldChatMember.(gotgbot.ChatMemberBanned)
+	if !ok1 && !ok2 {
+		return false
+	}
+	mm, ok := u.NewChatMember.(gotgbot.ChatMemberMember)
+	// 原来是不在群组中的人，且消息动作来自其他人，且没有邀请链接，就说明是从其他用户邀请来的
+	return ok && u.From.Id != mm.User.Id && u.InviteLink == nil
 }
 
 func isUserLeft(u *gotgbot.ChatMemberUpdated) bool {
@@ -130,6 +133,50 @@ var newGroupUsers = xsync.NewMap[newGroupUserKey, *newGroupUser]()
 func showWelcomeMessageToUserJoinedByLink(b *gotgbot.Bot, ctx *ext.Context) error {
 	user := ctx.ChatMember.NewChatMember.GetUser()
 	key := newGroupUserKey{UserId: user.Id, ChatId: ctx.ChatMember.Chat.Id}
+	if !ctx.ChatMember.InviteLink.CreatesJoinRequest {
+		// 用户没有使用经过管理员同意的链接加入
+		_, err := b.RestrictChatMember(key.ChatId, key.UserId, gotgbot.ChatPermissions{}, nil)
+		if err != nil {
+			return err
+		}
+		event := &UserJoinEvent{}
+		event.Init(key.UserId)
+		userStatus.Store(key.UserId, event)
+		text := fmt.Sprintf("点击下方链接验证您是人类\nhttps://t.me/%s?startapp", b.Username)
+		log.Printf("向用户%d发送人类验证消息", key.ChatId)
+		_, err = b.SendMessage(key.ChatId, text, nil)
+		if err != nil {
+			return err
+		}
+		state := event.WaitForStateEvent()
+		switch state {
+		case userVerifyFailed:
+			_, err = b.BanChatMember(key.ChatId, key.UserId, nil)
+			return err
+		case userVerifying:
+			return nil
+		case userVerifySucceed:
+			_, err = b.RestrictChatMember(key.ChatId, key.UserId, gotgbot.ChatPermissions{
+				CanSendMessages:       true,
+				CanSendAudios:         true,
+				CanSendDocuments:      true,
+				CanSendPhotos:         true,
+				CanSendVideos:         true,
+				CanSendVideoNotes:     true,
+				CanSendVoiceNotes:     true,
+				CanSendPolls:          true,
+				CanSendOtherMessages:  true,
+				CanAddWebPagePreviews: true,
+				CanChangeInfo:         true,
+				CanInviteUsers:        true,
+				CanPinMessages:        true,
+				CanManageTopics:       true,
+			}, nil)
+		}
+		if err != nil {
+			return err
+		}
+	}
 	until := time.Now().Add(10 * time.Minute)
 	value := &newGroupUser{fn: time.AfterFunc(time.Until(until), func() {
 		_, err := b.BanChatMember(key.ChatId, key.UserId, nil)
@@ -138,6 +185,7 @@ func showWelcomeMessageToUserJoinedByLink(b *gotgbot.Bot, ctx *ext.Context) erro
 		}
 	})}
 	newGroupUsers.Store(key, value)
+	time.Sleep(1 * time.Second)
 	text := fmt.Sprintf("欢迎<a href=\"%s\">%s</a>先生加入本群，和大家随便说点什么证明您是人类吧，否则bot还是会在10分钟后(%s)请您出去。",
 		fmt.Sprintf("tg://user?id=%d", key.UserId),
 		html.EscapeString(getUserFullName(&user)), until.Format(time.DateTime))
@@ -146,6 +194,10 @@ func showWelcomeMessageToUserJoinedByLink(b *gotgbot.Bot, ctx *ext.Context) erro
 	})
 	value.sentMsg = msg
 	return err
+}
+
+func isGroupMessage(msg *gotgbot.Message) bool {
+	return msg.Chat.Type == "supergroup" || msg.Chat.Type == "group"
 }
 
 func handleAnyNewMsg(b *gotgbot.Bot, ctx *ext.Context) error {
@@ -171,6 +223,5 @@ func handleAnyNewMsg(b *gotgbot.Bot, ctx *ext.Context) error {
 	if err != nil {
 		log.Println(err)
 	}
-
 	return nil
 }
