@@ -6,6 +6,7 @@ toolchain go1.24.4
 
 require (
 	github.com/PaulSonOfLars/gotgbot/v2 v2.0.0-rc.32
+	github.com/caarlos0/env/v11 v11.3.1
 	github.com/gin-gonic/gin v1.10.1
 	github.com/puzpuzpuz/xsync/v4 v4.1.0
 )

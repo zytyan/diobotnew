@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh">
 <head>
     <meta charset="UTF-8">
     <script src="https://telegram.org/js/telegram-web-app.js?57"></script>
@@ -7,7 +7,6 @@
         function inTelegramWebApp() {
             return Telegram.WebApp.initData !== '';
         }
-
         function showMessage(title, text) {
             if (inTelegramWebApp()) {
                 alert(text);
@@ -23,16 +22,14 @@
                 Telegram.WebApp.close();
             });
         }
-
-        const verifyUrl = `DIO_VERIFY_URL`;
         window.onloadTurnstileCallback = function () {
             turnstile.render("#cf-turnstile", {
-                sitekey: "1x00000000000000000000AA", // 建议换成你自己的
+                sitekey: "1x00000000000000000000AA",//运行时会替换该字符串
                 theme: "light",
                 size: "normal", // "normal", "compact", or "invisible"
                 callback: function (token) {
                     console.log(`Challenge Success: ${token}`);
-                    fetch(verifyUrl, {
+                    fetch("verify", {
                         method: "POST",
                         headers: {
                             "Content-Type": "application/json",
@@ -43,7 +40,7 @@
                         resp.json().then(data => {
                             console.log(data);
                             if (data.success) {
-                                document.getElementById("cf-turnstile").innerHTML = `<div>Success</div>`;
+                                // document.getElementById("cf-turnstile").innerHTML = `<div>Success</div>`;
                                 Telegram.WebApp.close();
                             } else {
                                 document.getElementById("cf-turnstile").innerHTML = `<div>Error</div>`;
@@ -66,26 +63,46 @@
             });
         };
     </script>
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback&render=explicit"
-            async defer></script>
+
     <title>Telegram Human Verify</title>
     <style>
-        #cf-turnstile {
-            margin: 40px auto;
+        html, body {
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+            height: 100%;
+            background: #f8f8f8;
+        }
+        .turnstile-scaler {
             width: 100%;
             max-width: 300px;
-            min-height: 65px; /* 防止看不到 */
-        }
-
-        body {
+            transform-origin: top left;
             display: flex;
             justify-content: center;
-            align-items: center;
-            height: 100vh;
+            overflow: hidden;
         }
     </style>
 </head>
 <body>
-<div id="cf-turnstile"></div>
+<div class="turnstile-scaler">
+    <div id="cf-turnstile"></div>
+</div>
 </body>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback&render=explicit"
+        async defer></script>
+<script>
+    function scaleTurnstile() {
+        const baseWidth = 300;
+        const scaler = document.querySelector('.turnstile-scaler');
+        if (!scaler) return;
+
+        const containerWidth = scaler.parentElement.offsetWidth;
+        const scale = Math.max(1, containerWidth / baseWidth);
+        scaler.style.transform = `scale(${scale})`;
+        console.log(`scale(${scale}) containerWidth=${containerWidth} baseWidth=${baseWidth}`);
+    }
+
+    window.addEventListener('resize', scaleTurnstile);
+    window.addEventListener('load', scaleTurnstile);
+</script>
 </html>

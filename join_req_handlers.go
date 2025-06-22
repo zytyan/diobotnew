@@ -21,6 +21,7 @@ const (
 
 type UserJoinEvent struct {
 	mu                sync.Mutex
+	o                 sync.Once
 	done              chan struct{}
 	deleteTimer       *time.Timer
 	verifyFailedTimer *time.Timer
@@ -38,7 +39,7 @@ func (u *UserJoinEvent) Init(userId int64) {
 	u.deleteTimer = time.AfterFunc(time.Hour*12, func() {
 		// 状态最多保存12小时
 		userStatus.Delete(userId)
-		close(u.done)
+		u.o.Do(func() { close(u.done) })
 	})
 	u.verifyFailedTimer = time.AfterFunc(time.Minute*6, func() {
 		u.SetState(userVerifyFailed)
@@ -53,7 +54,7 @@ func (u *UserJoinEvent) SetState(state UserJoinState) {
 	}
 	u.verifyFailedTimer.Stop()
 	u.CurrentState = state
-	close(u.done)
+	u.o.Do(func() { close(u.done) })
 }
 
 func (u *UserJoinEvent) WaitForStateEvent() UserJoinState {

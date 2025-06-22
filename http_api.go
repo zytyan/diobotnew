@@ -12,7 +12,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -26,12 +25,9 @@ func hErr(str string) gin.H {
 
 var botVerifyKey = sync.OnceValue(func() []byte {
 	mac := hmac.New(sha256.New, []byte("WebAppData"))
-	mac.Write([]byte(botToken))
+	mac.Write([]byte(cfg.BotToken))
 	return mac.Sum(nil)
 })
-var turnstileSecretKey = os.Getenv("TURNSTILE_SECRET")
-var siteKey = os.Getenv("SITE_KEY")
-var testing = os.Getenv("DIO_TESTING") != ""
 
 //go:embed index.html
 var mainHtml []byte
@@ -112,7 +108,7 @@ func checkTelegramAuth(str string, verifyKey []byte) (res AuthInfo, err error) {
 	return
 }
 func verifyHeader(ctx *gin.Context) {
-	if testing {
+	if cfg.Testing {
 		log.Println("[verifyHeader] 测试模式，跳过验证")
 		auth := AuthInfo{
 			QueryId: "test_query",
@@ -129,7 +125,9 @@ func verifyHeader(ctx *gin.Context) {
 			Hash:     "0xdeadbeef",
 		}
 		ctx.Set("auth", auth)
-		userStatus.Store(int64(-12345), &UserJoinEvent{UserId: -12345})
+		e := &UserJoinEvent{}
+		e.Init(-12345)
+		userStatus.Store(-12345, e)
 		ctx.Next()
 		return
 	}
@@ -195,7 +193,7 @@ func verifyTurnstile(ctx *gin.Context) {
 	log.Printf("[verifyTurnstile] 接收到 token: %s", token.Token)
 
 	form := make(url.Values)
-	form.Set("secret", turnstileSecretKey)
+	form.Set("secret", cfg.TurnstileSecret)
 	form.Set("response", token.Token)
 	if cfIp != "" {
 		form.Set("remoteip", cfIp)
@@ -244,37 +242,26 @@ func mainPage(ctx *gin.Context) {
 }
 
 func initHttp() {
-	if turnstileSecretKey == "" {
-		turnstileSecretKey = "1x0000000000000000000000000000000AA"
+	if !cfg.Testing {
+		gin.SetMode(gin.ReleaseMode)
 	}
-	if siteKey == "" {
-		siteKey = "1x00000000000000000000AA"
-	}
-	mainHtml = bytes.ReplaceAll(mainHtml, []byte("DIO_VERIFY_URL"), []byte("verify"))
-	mainHtml = bytes.ReplaceAll(mainHtml, []byte("1x00000000000000000000AA"), []byte(siteKey))
-
+	mainHtml = bytes.ReplaceAll(mainHtml, []byte("1x00000000000000000000AA"), []byte(cfg.TurnstileSiteKey))
 	r := gin.Default()
+	err := r.SetTrustedProxies([]string{"127.0.0.1", "::1"})
+	if err != nil {
+		log.Fatalf("[initHttp] 信任127.0.0.1代理失败: %v", err)
+	}
 	r.GET("/", mainPage)
 	r.POST("/verify", verifyHeader, verifyTurnstile)
-	addr := os.Getenv("DIO_LISTEN_ADDR")
-	if addr == "" {
-		addr = ":8532"
-	}
-	tlsCert := os.Getenv("DIO_TLS_CERT")
-	tlsKey := os.Getenv("DIO_TLS_KEY")
-	if tlsCert != "" || tlsKey != "" {
-		if tlsCert != "" && tlsKey != "" {
-			err := r.RunTLS(addr, tlsCert, tlsKey)
-			if err != nil {
-				panic(err)
-			}
-			return
+	if cfg.TlsKeyPath != "" && cfg.TlsCertPath != "" {
+		err := r.RunTLS(cfg.ListenAddress, cfg.TlsCertPath, cfg.TlsKeyPath)
+		if err != nil {
+			panic(err)
 		}
-		panic(fmt.Errorf("run TLS error, TLS_CERT=%s TLS_KEY=%s", tlsCert, tlsKey))
 		return
 	}
 	fmt.Println("You can use DIO_TLS_CERT and DIO_TLS_KEY env var to serve https")
-	err := r.Run(addr)
+	err = r.Run(cfg.ListenAddress)
 	if err != nil {
 		panic(err)
 	}

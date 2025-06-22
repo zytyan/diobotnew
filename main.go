@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
+	"github.com/caarlos0/env/v11"
 	"github.com/puzpuzpuz/xsync/v4"
 	"html"
 	"log"
 	"net/http"
-	"os"
+	"reflect"
 	"time"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
@@ -14,7 +15,70 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
 )
 
-var botToken = os.Getenv("BOT_TOKEN")
+type config struct {
+	BotToken string `env:"BOT_TOKEN" envDefault:"" help:"Telegram Bot Token, 必选" secret:"true"`
+	Testing  bool   `env:"TESTING" envDefault:"false" help:"测试用开关，打开后即使在浏览器打开也可以视同Telegram小程序"`
+
+	ListenAddress string `env:"LISTEN_ADDR" envDefault:":8532" help:"监听地址"`
+	TlsCertPath   string `env:"TLS_CERT" envDefault:"" help:"TLS 证书文件，同时设置证书与密钥可启用TLS监听"`
+	TlsKeyPath    string `env:"TLS_KEY" envDefault:"" help:"TLS 密钥文件"`
+
+	// 公开，请求时会发送给客户端
+	TurnstileSiteKey string `env:"TURNSTILE_SITE_KEY" envDefault:"" help:"Turnstile网站key，公开，需要发送给用户用于识别。"`
+	// 私有，只会存在服务器端
+	TurnstileSecret string `env:"TURNSTILE_SECRET" envDefault:"" help:"Turnstile密钥，私有，只会保存在后端程序中" secret:"true"`
+}
+
+var cfg config
+
+func hideSecret(secret string) string {
+	if len(secret) < 12 {
+		return "*****"
+	}
+	runes := []rune(secret)
+	n := len(runes)
+	return fmt.Sprintf("%s*****%s", string(runes[:4]), string(runes[n-4:]))
+}
+func printConfigHelp(cfg interface{}) {
+	cfgType := reflect.TypeOf(cfg)
+	cfgValue := reflect.ValueOf(cfg)
+	for i := 0; i < cfgType.NumField(); i++ {
+		field := cfgType.Field(i)
+		value := cfgValue.Field(i)
+
+		envTag := field.Tag.Get("env")
+		help := field.Tag.Get("help")
+		isSecret := field.Tag.Get("secret") == "true"
+
+		raw := fmt.Sprintf("%v", value.Interface())
+		display := ""
+
+		if isSecret {
+			display = hideSecret(raw)
+		} else if raw == "" {
+			// 使用 ANSI 转义序列上色，灰色或红色
+			display = "\033[1;31m<empty>\033[0m"
+		} else {
+			display = raw
+		}
+
+		fmt.Printf("%-20s = %-30s  # %s\n", envTag, display, help)
+	}
+}
+
+func init() {
+	err := env.Parse(&cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if cfg.TurnstileSiteKey == "" || cfg.TurnstileSecret == "" {
+		log.Printf("\033[1;43;30mTurnstileKey未配置，使用测试Key，请务必在生产环境中配置正确的环境变量，当前 siteKey=%s, secret=%s\033[0m",
+			cfg.TurnstileSiteKey, cfg.TurnstileSecret)
+		cfg.TurnstileSiteKey = "1x00000000000000000000AA"
+		cfg.TurnstileSecret = "1x0000000000000000000000000000000AA"
+	}
+	printConfigHelp(cfg)
+}
 
 // This bot is as basic as it gets - it simply repeats everything you say.
 // The main_test.go file contains example code to demonstrate how to implement the gotgbot.BotClient interface for it to be used in tests.
@@ -23,12 +87,12 @@ func main() {
 	// Get token from the environment variable
 	go initHttp()
 	// Create bot from environment value.
-	b, err := gotgbot.NewBot(botToken, &gotgbot.BotOpts{
+	b, err := gotgbot.NewBot(cfg.BotToken, &gotgbot.BotOpts{
 		BotClient: &gotgbot.BaseBotClient{
 			Client: http.Client{},
 			DefaultRequestOpts: &gotgbot.RequestOpts{
-				Timeout: gotgbot.DefaultTimeout, // Customise the default request timeout here
-				APIURL:  gotgbot.DefaultAPIURL,  // As well as the Default API URL here (in case of using local bot API servers)
+				Timeout: 10 * time.Second,      // Customise the default request timeout here
+				APIURL:  gotgbot.DefaultAPIURL, // As well as the Default API URL here (in case of using local bot API servers)
 			},
 		},
 	})
