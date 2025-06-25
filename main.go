@@ -18,6 +18,7 @@ import (
 type config struct {
 	BotToken string `env:"BOT_TOKEN" envDefault:"" help:"Telegram Bot Token, 必选" secret:"true"`
 	Testing  bool   `env:"TESTING" envDefault:"false" help:"测试用开关，打开后即使在浏览器打开也可以视同Telegram小程序"`
+	ApiAddr  string `env:"API_ADDR" envDefault:"https://api.telegram.org"`
 
 	ListenAddress string `env:"LISTEN_ADDR" envDefault:":8532" help:"监听地址"`
 	TlsCertPath   string `env:"TLS_CERT" envDefault:"" help:"TLS 证书文件，同时设置证书与密钥可启用TLS监听"`
@@ -91,8 +92,8 @@ func main() {
 		BotClient: &gotgbot.BaseBotClient{
 			Client: http.Client{},
 			DefaultRequestOpts: &gotgbot.RequestOpts{
-				Timeout: 10 * time.Second,      // Customise the default request timeout here
-				APIURL:  gotgbot.DefaultAPIURL, // As well as the Default API URL here (in case of using local bot API servers)
+				Timeout: 10 * time.Second, // Customise the default request timeout here
+				APIURL:  cfg.ApiAddr,      // As well as the Default API URL here (in case of using local bot API servers)
 			},
 		},
 	})
