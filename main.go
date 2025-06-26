@@ -111,7 +111,8 @@ func main() {
 	})
 	updater := ext.NewUpdater(dispatcher, nil)
 
-	dispatcher.AddHandler(handlers.NewChatMember(isInvitedByOtherMember, showWelcomeMessageToUserByInvited))
+	dispatcher.AddHandler(handlers.NewChatMember(isUserInvitedByOtherMember, showWelcomeMessageToUserViaInvited))
+	dispatcher.AddHandler(handlers.NewChatMember(isBotInvitedByOtherMember, showWelcomeMessageToBotViaInvited))
 	dispatcher.AddHandler(handlers.NewChatMember(isUserLeft, showGoodbyeMessageToChat))
 	dispatcher.AddHandler(handlers.NewChatMember(isUserBanned, showBannedMessageToChat))
 	dispatcher.AddHandler(handlers.NewChatMember(isUserJoinedByLink, showWelcomeMessageToUserJoinedByLink))
@@ -136,7 +137,6 @@ func main() {
 	// Idle, to keep updates coming in, and avoid bot stopping.
 	updater.Idle()
 }
-
 func isInvitedByOtherMember(u *gotgbot.ChatMemberUpdated) bool {
 	_, ok1 := u.OldChatMember.(gotgbot.ChatMemberLeft)
 	_, ok2 := u.OldChatMember.(gotgbot.ChatMemberBanned)
@@ -146,6 +146,14 @@ func isInvitedByOtherMember(u *gotgbot.ChatMemberUpdated) bool {
 	mm, ok := u.NewChatMember.(gotgbot.ChatMemberMember)
 	// 原来是不在群组中的人，且消息动作来自其他人，且没有邀请链接，就说明是从其他用户邀请来的
 	return ok && u.From.Id != mm.User.Id && u.InviteLink == nil
+}
+
+func isBotInvitedByOtherMember(u *gotgbot.ChatMemberUpdated) bool {
+	return isInvitedByOtherMember(u) && u.NewChatMember.GetUser().IsBot
+}
+
+func isUserInvitedByOtherMember(u *gotgbot.ChatMemberUpdated) bool {
+	return isInvitedByOtherMember(u) && !u.NewChatMember.GetUser().IsBot
 }
 
 func isUserLeft(u *gotgbot.ChatMemberUpdated) bool {
@@ -162,10 +170,18 @@ func isUserBanned(u *gotgbot.ChatMemberUpdated) bool {
 	return ok
 }
 
-func showWelcomeMessageToUserByInvited(b *gotgbot.Bot, ctx *ext.Context) error {
-	inviter := ctx.ChatMember.OldChatMember.GetUser()
+func showWelcomeMessageToUserViaInvited(b *gotgbot.Bot, ctx *ext.Context) error {
+	inviter := ctx.ChatMember.From
 	invitee := ctx.ChatMember.NewChatMember.GetUser()
 	text := fmt.Sprintf(`原来是%s先生请来的贵客，%s先生您也请。`, getUserFullName(&inviter), getUserFullName(&invitee))
+	_, err := b.SendMessage(ctx.ChatMember.Chat.Id, text, nil)
+	return err
+}
+
+func showWelcomeMessageToBotViaInvited(b *gotgbot.Bot, ctx *ext.Context) error {
+	inviter := ctx.ChatMember.From
+	invitee := ctx.ChatMember.NewChatMember.GetUser()
+	text := fmt.Sprintf(`原来是%s先生请来的打工bot %s，这里打工007的！`, getUserFullName(&inviter), getUserFullName(&invitee))
 	_, err := b.SendMessage(ctx.ChatMember.Chat.Id, text, nil)
 	return err
 }
@@ -179,6 +195,7 @@ func showGoodbyeMessageToChat(b *gotgbot.Bot, ctx *ext.Context) error {
 func showBannedMessageToChat(b *gotgbot.Bot, ctx *ext.Context) error {
 	bannedUser := ctx.ChatMember.NewChatMember.GetUser()
 	untilDate := ctx.ChatMember.NewChatMember.(gotgbot.ChatMemberBanned).UntilDate
+	log.Printf("untilDate = %d", untilDate)
 	var text string
 	if untilDate == 0 {
 		text = fmt.Sprintf("%s被管理的大手处理，永远离开了我们", getUserFullName(&bannedUser))
