@@ -178,7 +178,31 @@ func showGoodbyeMessageToChat(b *gotgbot.Bot, ctx *ext.Context) error {
 }
 func showBannedMessageToChat(b *gotgbot.Bot, ctx *ext.Context) error {
 	bannedUser := ctx.ChatMember.NewChatMember.GetUser()
-	text := fmt.Sprintf("%s被管理的大手处理，彻底离开了我们", getUserFullName(&bannedUser))
+	untilDate := ctx.ChatMember.NewChatMember.(gotgbot.ChatMemberBanned).UntilDate
+	var text string
+	if untilDate == 0 {
+		text = fmt.Sprintf("%s被管理的大手处理，永远离开了我们", getUserFullName(&bannedUser))
+	}
+	until := time.Unix(untilDate, 0)
+	now := time.Now()
+	subTime := until.Sub(now)
+	subTime -= 10 * time.Second // 用于避免配置整单位时间时，传到bot时与telegram服务器的时间差
+	if subTime < 900*time.Second {
+		text = fmt.Sprintf("%s被管理的大手处理，暂时离开了我们", getUserFullName(&bannedUser))
+	} else if subTime < 16*time.Hour {
+		text = fmt.Sprintf("%s被管理的大手处理，离开了我们几个小时", getUserFullName(&bannedUser))
+	} else if subTime < 48*time.Hour {
+		text = fmt.Sprintf("%s被管理的大手处理，离开了我们一两天", getUserFullName(&bannedUser))
+	} else if subTime < 7*24*time.Hour {
+		text = fmt.Sprintf("%s被管理的大手处理，要离开我们好几天", getUserFullName(&bannedUser))
+	} else if subTime < 30*24*time.Hour {
+		text = fmt.Sprintf("%s被管理的大手处理，一个月内怕是见不到了", getUserFullName(&bannedUser))
+	} else if subTime < 365*24*time.Hour {
+		text = fmt.Sprintf("%s被管理的大手处理，几个月都回不来，真是判得重了", getUserFullName(&bannedUser))
+	} else {
+		text = fmt.Sprintf("%s被管理的大手处理，恐怕要等明年、后年，甚至下辈子才见得到了", getUserFullName(&bannedUser))
+	}
+
 	_, err := b.SendMessage(ctx.ChatMember.Chat.Id, text, nil)
 	return err
 }
