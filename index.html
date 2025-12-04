@@ -71,7 +71,12 @@
             padding: 0;
             overflow-x: hidden;
             height: 100%;
-            background: #f8f8f8;
+            background: var(--tg-theme-bg-color, var(--dark-theme-color, #f8f8f8));
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --dark-theme-color: #17212b;
+            }
         }
         .turnstile-scaler {
             width: 100%;
