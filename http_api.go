@@ -125,9 +125,11 @@ func verifyHeader(ctx *gin.Context) {
 			Hash:     "0xdeadbeef",
 		}
 		ctx.Set("auth", auth)
-		e := &UserJoinEvent{}
-		e.Init(-12345)
-		userStatus.Store(-12345, e)
+		userStatus.LoadOrCompute(auth.User.Id, func() (*UserJoinEvent, bool) {
+			e := &UserJoinEvent{}
+			e.Init(auth.User.Id, auth.User.Username, defaultVerificationTimeout)
+			return e, false
+		})
 		ctx.Next()
 		return
 	}
@@ -207,17 +209,12 @@ func verifyTurnstile(ctx *gin.Context) {
 	defer resp.Body.Close()
 
 	auth := ctx.MustGet("auth").(AuthInfo)
-	event, ok := userStatus.LoadOrStore(auth.User.Id, &UserJoinEvent{
-		mu:           sync.Mutex{},
-		deleteTimer:  nil,
-		UserId:       0,
-		ReqTime:      time.Time{},
-		CurrentState: userVerifying,
+	event, _ := userStatus.LoadOrCompute(auth.User.Id, func() (*UserJoinEvent, bool) {
+		e := &UserJoinEvent{}
+		e.Init(auth.User.Id, auth.User.Username, defaultVerificationTimeout)
+		return e, false
 	})
-	if !ok {
-		log.Printf("[verifyTurnstile] 用户未加载，但bot强行开始验证: %d", event.UserId)
-		event.Init(auth.User.Id)
-	}
+	event.UpdateUsername(auth.User.Username)
 	var data TurnstileResp
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		log.Printf("[verifyTurnstile] JSON 解码失败: %v", err)

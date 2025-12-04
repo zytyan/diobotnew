@@ -20,6 +20,8 @@ type config struct {
 	Testing  bool   `env:"TESTING" envDefault:"false" help:"测试用开关，打开后即使在浏览器打开也可以视同Telegram小程序"`
 	ApiAddr  string `env:"API_ADDR" envDefault:"https://api.telegram.org"`
 
+	DatabasePath string `env:"DATABASE_PATH" envDefault:"./data.sqlite" help:"SQLite 存储文件路径"`
+
 	ListenAddress string `env:"LISTEN_ADDR" envDefault:":8532" help:"监听地址"`
 	TlsCertPath   string `env:"TLS_CERT" envDefault:"" help:"TLS 证书文件，同时设置证书与密钥可启用TLS监听"`
 	TlsKeyPath    string `env:"TLS_KEY" envDefault:"" help:"TLS 密钥文件"`
@@ -31,6 +33,7 @@ type config struct {
 }
 
 var cfg config
+var persistentStore *PersistentStore
 
 func hideSecret(secret string) string {
 	if len(secret) < 12 {
@@ -71,6 +74,10 @@ func init() {
 	err := env.Parse(&cfg)
 	if err != nil {
 		log.Fatal(err)
+	}
+	persistentStore, err = NewPersistentStore(cfg.DatabasePath)
+	if err != nil {
+		log.Fatalf("init persistent store failed: %v", err)
 	}
 	if cfg.TurnstileSiteKey == "" || cfg.TurnstileSecret == "" {
 		log.Printf("\033[1;43;30mTurnstileKey未配置，使用测试Key，请务必在生产环境中配置正确的环境变量，当前 siteKey=%s, secret=%s\033[0m",
@@ -244,9 +251,26 @@ func showWelcomeMessageToUserJoinedByLink(b *gotgbot.Bot, ctx *ext.Context) erro
 		if err != nil {
 			return err
 		}
-		event := &UserJoinEvent{}
-		event.Init(key.UserId)
-		userStatus.Store(key.UserId, event)
+		verificationTimeout := defaultVerificationTimeout
+		if persistentStore != nil {
+			if cfg, err := persistentStore.GetOrCreateGroupConfig(key.ChatId); err == nil {
+				verificationTimeout = cfg.VerificationTimeout()
+			} else {
+				log.Printf("加载群组配置失败: %v", err)
+			}
+		}
+		event, loaded := userStatus.LoadOrCompute(key.UserId, func() (*UserJoinEvent, bool) {
+			e := &UserJoinEvent{}
+			e.Init(key.UserId, user.Username, verificationTimeout)
+			return e, false
+		})
+		if loaded {
+			event.UpdateUsername(user.Username)
+			persistUserVerification(key.UserId, user.Username, event.CurrentState)
+		}
+		if err := recordPendingGroup(key.UserId, key.ChatId); err != nil {
+			log.Printf("记录待加入群组失败: %v", err)
+		}
 		text := fmt.Sprintf("点击下方链接验证您是人类\nhttps://t.me/%s?startapp", b.Username)
 		log.Printf("向用户%d发送人类验证消息", key.ChatId)
 		_, err = b.SendMessage(key.ChatId, text, nil)
