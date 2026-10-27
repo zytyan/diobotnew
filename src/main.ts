@@ -28,6 +28,16 @@ if (Deno.args.includes("--version")) {
     await bot.api.setMyCommands([
       { command: "settings", description: "配置本群功能", is_ephemeral: true },
       {
+        command: "check",
+        description: "回复成员消息，检查 AI 判断",
+        is_ephemeral: true,
+      },
+      {
+        command: "review",
+        description: "复核近期样本与标记误判",
+        is_ephemeral: true,
+      },
+      {
         command: "tree",
         description: "处理被封禁成员的直接邀请",
         is_ephemeral: true,

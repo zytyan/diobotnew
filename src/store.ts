@@ -1,5 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { dirname } from "node:path";
+import type { Config } from "./config.ts";
+import type { AvatarImage } from "./profiles.ts";
 
 export interface Join {
   id: string;
@@ -59,6 +61,20 @@ export class Store {
         action_id TEXT NOT NULL, user_id INTEGER NOT NULL,
         state TEXT NOT NULL DEFAULT 'pending', PRIMARY KEY(action_id,user_id)
       );
+      CREATE TABLE IF NOT EXISTS review_settings(chat_id INTEGER PRIMARY KEY, enabled INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS review_avatars(hash TEXT PRIMARY KEY, mime TEXT NOT NULL, bytes BLOB NOT NULL, last_used INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS review_messages(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL, message_id INTEGER NOT NULL,
+        sender_id INTEGER NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL,
+        profile_json TEXT NOT NULL, avatar_hash TEXT, fingerprint TEXT NOT NULL,
+        message_date INTEGER NOT NULL, seen_at INTEGER NOT NULL, mode TEXT NOT NULL,
+        result_json TEXT, action TEXT NOT NULL DEFAULT 'recorded', human_label TEXT,
+        reviewed_by INTEGER, reviewed_at INTEGER,
+        UNIQUE(chat_id,message_id,fingerprint)
+      );
+      CREATE INDEX IF NOT EXISTS review_chat_time ON review_messages(chat_id,seen_at DESC,id DESC);
+      CREATE INDEX IF NOT EXISTS review_global_time ON review_messages(seen_at DESC,id DESC);
+      CREATE INDEX IF NOT EXISTS review_sender ON review_messages(chat_id,sender_id);
       UPDATE joins SET state='done' WHERE state='speech' OR kind='speech';
     `);
   }
@@ -159,6 +175,9 @@ export class Store {
       leave: !!row.leave_notice,
       tree: !!row.tree,
       revision: Number(row.revision),
+      review:
+        this.db.prepare("SELECT enabled FROM review_settings WHERE chat_id=?")
+          .get(chat)?.enabled !== 0,
     };
   }
   updateSetting(
@@ -167,6 +186,23 @@ export class Store {
     value: boolean | string,
     revision: number,
   ): boolean {
+    if (key === "review") {
+      this.db.exec("BEGIN IMMEDIATE");
+      try {
+        const changed = this.db.prepare(
+          "UPDATE group_settings SET revision=revision+1 WHERE chat_id=? AND revision=?",
+        ).run(chat, revision).changes > 0;
+        if (changed) {
+          this.db.prepare("INSERT OR REPLACE INTO review_settings VALUES(?,?)")
+            .run(chat, Number(!!value));
+        }
+        this.db.exec("COMMIT");
+        return changed;
+      } catch (error) {
+        this.db.exec("ROLLBACK");
+        throw error;
+      }
+    }
     const columns = {
       verification: "verification",
       moderation: "moderation",
@@ -311,6 +347,113 @@ export class Store {
       Date.now(),
     );
   }
+  recordReview(
+    input: ReviewInput,
+    limits: Pick<Config, "reviewDays" | "reviewPerChat" | "reviewMax">,
+    now = Date.now(),
+  ): number | undefined {
+    if (limits.reviewDays === 0) return;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      if (input.avatar) {
+        this.db.prepare(
+          `INSERT INTO review_avatars VALUES(?,?,?,?) ON CONFLICT(hash) DO UPDATE SET last_used=excluded.last_used`,
+        )
+          .run(input.avatar.hash, input.avatar.mime, input.avatar.bytes, now);
+      }
+      this.db.prepare(
+        `INSERT INTO review_messages(chat_id,message_id,sender_id,kind,text,profile_json,avatar_hash,fingerprint,message_date,seen_at,mode)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(chat_id,message_id,fingerprint) DO UPDATE SET seen_at=excluded.seen_at,mode=excluded.mode`,
+      )
+        .run(
+          input.chat,
+          input.message,
+          input.sender,
+          input.kind,
+          input.text.slice(0, 8000),
+          input.profile,
+          input.avatar?.hash ?? null,
+          input.fingerprint,
+          input.date,
+          now,
+          input.mode,
+        );
+      const row = this.db.prepare(
+        "SELECT id FROM review_messages WHERE chat_id=? AND message_id=? AND fingerprint=?",
+      ).get(input.chat, input.message, input.fingerprint)!;
+      this.pruneReview(limits, now);
+      this.db.prepare(
+        "DELETE FROM review_messages WHERE id IN (SELECT id FROM review_messages WHERE chat_id=? ORDER BY seen_at DESC,id DESC LIMIT -1 OFFSET ?)",
+      ).run(input.chat, limits.reviewPerChat);
+      this.db.prepare(
+        "DELETE FROM review_messages WHERE id IN (SELECT id FROM review_messages ORDER BY seen_at DESC,id DESC LIMIT -1 OFFSET ?)",
+      ).run(limits.reviewMax);
+      this.pruneAvatars();
+      this.db.exec("COMMIT");
+      return Number(row.id);
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  private lastReviewPrune = 0;
+  pruneReview(limits: Pick<Config, "reviewDays">, now = Date.now()) {
+    if (this.lastReviewPrune && now - this.lastReviewPrune < 60_000) return;
+    this.db.prepare("DELETE FROM review_messages WHERE seen_at<?").run(
+      now - limits.reviewDays * 86_400_000,
+    );
+    this.db.prepare("DELETE FROM moderation WHERE created<?").run(
+      now - 86_400_000,
+    );
+    this.pruneAvatars();
+    this.lastReviewPrune = now;
+  }
+  private pruneAvatars() {
+    this.db.exec(
+      `DELETE FROM review_avatars WHERE hash NOT IN (SELECT avatar_hash FROM review_messages WHERE avatar_hash IS NOT NULL);
+      DELETE FROM review_avatars WHERE hash IN (
+        SELECT hash FROM (SELECT hash,SUM(length(bytes)) OVER (ORDER BY last_used DESC,hash) AS total FROM review_avatars) WHERE total>33554432
+      );
+      UPDATE review_messages SET avatar_hash=NULL WHERE avatar_hash IS NOT NULL AND avatar_hash NOT IN (SELECT hash FROM review_avatars);`,
+    );
+  }
+  reviewResult(id: number | undefined, action: string, result?: unknown) {
+    if (id === undefined) return;
+    this.db.prepare(
+      "UPDATE review_messages SET action=?,result_json=COALESCE(?,result_json) WHERE id=?",
+    ).run(action, result === undefined ? null : JSON.stringify(result), id);
+  }
+  recentReviews(chat: number, limit = 5): ReviewRow[] {
+    return this.db.prepare(
+      "SELECT * FROM review_messages WHERE chat_id=? ORDER BY seen_at DESC,id DESC LIMIT ?",
+    ).all(chat, limit) as unknown as ReviewRow[];
+  }
+  labelReview(
+    id: number,
+    chat: number,
+    label: string,
+    reviewer: number,
+  ): boolean {
+    if (!["normal", "advertisement", "scam", "uncertain"].includes(label)) {
+      return false;
+    }
+    return this.db.prepare(
+      "UPDATE review_messages SET human_label=?,reviewed_by=?,reviewed_at=? WHERE id=? AND chat_id=?",
+    ).run(label, reviewer, Date.now(), id, chat).changes > 0;
+  }
+  forgetReviewSender(chat: number, user: number) {
+    this.db.prepare(
+      "DELETE FROM moderation WHERE chat_id=? AND message_id IN (SELECT message_id FROM review_messages WHERE chat_id=? AND sender_id=?)",
+    ).run(chat, chat, user);
+    this.db.prepare(
+      "DELETE FROM review_messages WHERE chat_id=? AND sender_id=?",
+    ).run(chat, user);
+    this.pruneAvatars();
+  }
+  reviewAvatar(hash: string): { mime: string; bytes: Uint8Array } | undefined {
+    return this.db.prepare("SELECT mime,bytes FROM review_avatars WHERE hash=?")
+      .get(hash) as unknown as { mime: string; bytes: Uint8Array } | undefined;
+  }
   close() {
     this.db.close();
   }
@@ -324,6 +467,7 @@ export interface GroupSettings {
   leave: boolean;
   tree: boolean;
   revision?: number;
+  review?: boolean;
 }
 export type SettingKey =
   | "verification"
@@ -331,7 +475,8 @@ export type SettingKey =
   | "welcome"
   | "kicked"
   | "leave"
-  | "tree";
+  | "tree"
+  | "review";
 export interface TreeAction {
   id: string;
   chat_id: number;
@@ -339,4 +484,35 @@ export interface TreeAction {
   root_id: number;
   expires: number;
   state: string;
+}
+
+export interface ReviewInput {
+  chat: number;
+  message: number;
+  sender: number;
+  kind: string;
+  text: string;
+  profile: string;
+  avatar?: AvatarImage;
+  fingerprint: string;
+  date: number;
+  mode: string;
+}
+export interface ReviewRow {
+  id: number;
+  chat_id: number;
+  message_id: number;
+  sender_id: number;
+  kind: string;
+  text: string;
+  profile_json: string;
+  avatar_hash: string | null;
+  seen_at: number;
+  message_date: number;
+  mode: string;
+  result_json: string | null;
+  action: string;
+  human_label: string | null;
+  reviewed_by: number | null;
+  reviewed_at: number | null;
 }

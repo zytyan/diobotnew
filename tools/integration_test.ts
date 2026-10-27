@@ -91,18 +91,23 @@ async function receive(predicate: (u: Update) => boolean) {
 try {
   await bot.init();
   await bot.api.setMyCommands(
-    [{ command: "settings", description: "群管理设置", is_ephemeral: true }, {
-      command: "tree",
-      description: "处理直接邀请成员",
-      is_ephemeral: true,
-    }],
+    [
+      { command: "check", description: "检查 AI 判断", is_ephemeral: true },
+      { command: "review", description: "复核近期样本", is_ephemeral: true },
+      { command: "settings", description: "群管理设置", is_ephemeral: true },
+      {
+        command: "tree",
+        description: "处理直接邀请成员",
+        is_ephemeral: true,
+      },
+    ],
     { scope: { type: "all_chat_administrators" } },
   );
   const commands = await bot.api.getMyCommands({
     scope: { type: "all_chat_administrators" },
   });
   assert(
-    commands.length === 2 && commands.every((c) => c.is_ephemeral),
+    commands.length === 4 && commands.every((c) => c.is_ephemeral),
     "Ephemeral commands not registered",
   );
   console.log("PASS: Telegram API registered ephemeral administrator commands");

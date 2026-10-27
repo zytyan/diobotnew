@@ -334,3 +334,75 @@ Deno.test("bot 被移出群时取消待验证和已确认砍树任务", async ()
     t.store.close();
   }
 });
+
+Deno.test("近期样本面板私密且只限当前管理员，标注按钮绑定操作者", async () => {
+  const t = setup();
+  try {
+    await t.bot.init();
+    const id = t.store.recordReview({
+      chat: -1,
+      message: 1,
+      sender: 2,
+      kind: "text",
+      text: "Alice",
+      profile: '{"sender":{"display_name":"Alice"}}',
+      fingerprint: "1",
+      date: 1,
+      mode: "observe",
+    }, { reviewDays: 7, reviewPerChat: 1000, reviewMax: 10000 })!;
+    await t.command(2, "/review");
+    assert(!JSON.stringify(t.calls.at(-1)).includes("Alice"));
+    await t.command(1, "/review");
+    assert(JSON.stringify(t.calls.at(-1)).includes("Alice"));
+    assert(!t.calls.some((c) => c.method === "sendMessage"));
+    await t.callback(2, `rev:1:${id}:normal`, 1);
+    assert(!t.store.recentReviews(-1)[0].human_label);
+    await t.callback(1, `rev:1:${id}:normal`);
+    assert(t.store.recentReviews(-1)[0].human_label === "normal");
+    t.roles.set(1, { status: "member", user: user(1) });
+    await t.callback(1, `rev:1:${id}:scam`);
+    assert(t.store.recentReviews(-1)[0].human_label === "normal");
+  } finally {
+    t.store.close();
+  }
+});
+
+Deno.test("/check 私密命令检查回复消息，普通成员无权调用，管理员消息不上传", async () => {
+  const t = setup();
+  try {
+    await t.bot.init();
+    await t.command(2, "/check");
+    assert(JSON.stringify(t.calls.at(-1)).includes("只有本群管理员"));
+    await t.command(1, "/check");
+    assert(JSON.stringify(t.calls.at(-1)).includes("请回复"));
+    await t.bot.handleUpdate({
+      update_id: 500,
+      message: {
+        message_id: 0,
+        ephemeral_message_id: 9,
+        receiver_user: user(1),
+        chat,
+        from: user(1),
+        date: 1,
+        text: "/check",
+        entities: [{ type: "bot_command", offset: 0, length: 6 }],
+        reply_to_message: {
+          reply_to_message: undefined,
+          message_id: 1,
+          chat,
+          from: user(1),
+          date: 1,
+          text: "private admin content",
+        },
+      },
+    });
+    assert(JSON.stringify(t.calls.at(-1)).includes("未上传"));
+    assert(
+      !t.calls.some((c) =>
+        c.method === "sendMessage" || c.method === "getUserProfilePhotos"
+      ),
+    );
+  } finally {
+    t.store.close();
+  }
+});

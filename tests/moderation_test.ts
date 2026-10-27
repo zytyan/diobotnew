@@ -161,3 +161,55 @@ Deno.test("真实适配器缓存按模型和阈值失效，配额用完不发请
     store.close();
   }
 });
+
+Deno.test("头像按 Clef 多模态接口发送，资料改变使审核缓存失效", async () => {
+  const store = new Store(":memory:");
+  let calls = 0;
+  const config = loadConfig({
+    BOT_TOKEN: "99:fake",
+    TELEGRAM_ENV: "test",
+    CF_ACCOUNT_ID: "account",
+    CF_API_TOKEN: "token",
+  });
+  const context = {
+    profile: {
+      display_name: "Alice",
+      username: "alice",
+      bio: "developer",
+      bio_status: "available" as const,
+      avatar_status: "available" as const,
+    },
+    avatar: {
+      hash: "hash",
+      mime: "image/jpeg" as const,
+      bytes: new Uint8Array([255, 216, 255]),
+      base64: "/9j/",
+    },
+  };
+  const request: typeof fetch = (_url, init) => {
+    calls++;
+    const body = JSON.parse(String(init?.body));
+    assert(body.images[0].base64 === "/9j/");
+    assert(body.state.sender.username === "alice");
+    return Promise.resolve(
+      Response.json(
+        result({
+          normal: .99,
+          advertisement: .003,
+          scam: .003,
+          uncertain: .004,
+        }, "normal"),
+      ),
+    );
+  };
+  try {
+    await moderate(config, store, -1, 1, "Alice", request, context);
+    await moderate(config, store, -1, 1, "Alice", request, context);
+    assert(calls === 1);
+    context.profile.bio = "changed";
+    await moderate(config, store, -1, 1, "Alice", request, context);
+    assert(Number(calls) === 2);
+  } finally {
+    store.close();
+  }
+});

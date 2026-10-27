@@ -1,4 +1,5 @@
 import { Bot, type Context, GrammyError } from "grammy";
+import { createReview } from "./review.ts";
 import type {
   InputRichBlock,
   InputRichMessage,
@@ -31,6 +32,7 @@ const labels: Record<SettingKey, string> = {
   kicked: "移出/封禁消息",
   leave: "离开消息",
   tree: "砍树提示",
+  review: "近期样本记录",
 };
 export function createAdmin(bot: Bot, config: Config, store: Store) {
   function settings(chat: number): GroupSettings {
@@ -119,6 +121,7 @@ export function createAdmin(bot: Bot, config: Config, store: Store) {
     );
     return { blocks, skip_entity_detection: true };
   }
+  createReview(bot, config, store, { panel, isAdmin });
   bot.command("settings", async (ctx) => {
     if (!["group", "supergroup"].includes(ctx.chat.type) || !ctx.from) return;
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) {
@@ -212,6 +215,13 @@ export function createAdmin(bot: Bot, config: Config, store: Store) {
         await panel(
           ctx,
           menu(ctx.chat.id, ctx.from.id, "服务端尚未配置人机验证，无法开启。"),
+        );
+        return;
+      }
+      if (field === "review" && value && config.reviewDays === 0) {
+        await panel(
+          ctx,
+          menu(ctx.chat.id, ctx.from.id, "服务端已关闭样本留存。"),
         );
         return;
       }
@@ -402,5 +412,5 @@ export function createAdmin(bot: Bot, config: Config, store: Store) {
     }
     if (!store.treePending(action.id).length) store.finishTree(action.id);
   }
-  return { settings, offer, processTree };
+  return { settings, offer, processTree, panel, isAdmin };
 }

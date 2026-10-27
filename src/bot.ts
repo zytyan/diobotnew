@@ -1,14 +1,21 @@
 import { Bot, GrammyError } from "grammy";
-import type { ChatPermissions, User } from "grammy/types";
+import type { ChatPermissions, Message, User } from "grammy/types";
 import { ChatQueue } from "./queue.ts";
 import type { Config } from "./config.ts";
 import type { Store } from "./store.ts";
 import { moderate } from "./moderation.ts";
+import { createCheck } from "./check.ts";
 import { createAdmin } from "./admin.ts";
+import { moderationEligibility } from "./eligibility.ts";
+import { fingerprint, Profiles, profileState } from "./profiles.ts";
 
 const fullName = (user: User) =>
   [user.first_name, user.last_name].filter(Boolean).join(" ");
-export function createBot(config: Config, store: Store) {
+export function createBot(
+  config: Config,
+  store: Store,
+  dependencies: { request?: typeof fetch } = {},
+) {
   const bot = new Bot(config.token, {
     client: {
       apiRoot: config.apiRoot,
@@ -32,7 +39,10 @@ export function createBot(config: Config, store: Store) {
     }
     await next();
   });
+  const request = dependencies.request ?? fetch;
+  const profiles = new Profiles(bot.api, config, request);
   const admin = createAdmin(bot, config, store);
+  createCheck(bot, config, store, profiles, request, admin);
   bot.command("start", async (ctx) => {
     if (ctx.chat.type !== "private") return;
     await ctx.reply("我是群管理 bot。入群验证请使用申请入群后收到的专属链接。");
@@ -75,6 +85,10 @@ export function createBot(config: Config, store: Store) {
     const after = event.new_chat_member;
     const user = after.user;
     const name = fullName(user);
+    if (after.status === "administrator" || after.status === "creator") {
+      store.forgetReviewSender(event.chat.id, user.id);
+      profiles.invalidate(user.id);
+    }
     if (after.status === "left") {
       store.cancel(event.chat.id, user.id);
       store.memberLeft(event.chat.id, user.id);
@@ -169,17 +183,64 @@ export function createBot(config: Config, store: Store) {
   bot.on(["message", "edited_message"], async (ctx) => {
     if (ctx.chat.type !== "group" && ctx.chat.type !== "supergroup") return;
     const msg = ctx.message ?? ctx.editedMessage!;
-    if (
-      msg.new_chat_members || msg.left_chat_member || !msg.from ||
-      msg.from.is_bot
-    ) return;
+    const kind = messageKind(msg);
+    if (!kind || !msg.from) return;
+    const eligibility = await moderationEligibility(
+      bot.api,
+      msg,
+      bot.botInfo.id,
+      config.owners,
+    );
+    if (!eligibility.allowed) {
+      if (eligibility.protectedUser) {
+        store.forgetReviewSender(ctx.chat.id, eligibility.protectedUser);
+      }
+      return;
+    }
     const settings = admin.settings(ctx.chat.id);
-    if (
-      settings.moderation === "off" || config.owners.has(msg.from.id) ||
-      msg.ephemeral_message_id
-    ) return;
-    const text = msg.text ?? msg.caption;
-    if (!text) return;
+    const recording = settings.review !== false && config.reviewDays > 0;
+    if (settings.moderation === "off" && !recording) return;
+    const text = msg.text ?? msg.caption ?? "";
+    const context = await profiles.get(msg.from);
+    context.messageKind = kind;
+    const entities = msg.text !== undefined
+      ? msg.entities
+      : msg.caption_entities;
+    context.links = entities?.filter((e) => e.type === "text_link").map((e) =>
+      e.url
+    ).slice(0, 8);
+    const inputHash = await fingerprint({
+      text,
+      context: profileState(context),
+    });
+    // Recheck after profile/file I/O: a newly promoted administrator is protected.
+    const latest = await moderationEligibility(
+      bot.api,
+      msg,
+      bot.botInfo.id,
+      config.owners,
+    );
+    if (!latest.allowed) {
+      if (latest.protectedUser) {
+        store.forgetReviewSender(ctx.chat.id, latest.protectedUser);
+      }
+      return;
+    }
+    const sample = recording
+      ? store.recordReview({
+        chat: ctx.chat.id,
+        message: msg.message_id,
+        sender: msg.from.id,
+        kind,
+        text,
+        profile: JSON.stringify(profileState(context)),
+        avatar: context.avatar,
+        fingerprint: inputHash,
+        date: msg.date * 1000,
+        mode: settings.moderation,
+      }, config)
+      : undefined;
+    if (settings.moderation === "off" || !text) return;
     try {
       const verdict = await moderate(
         config,
@@ -187,8 +248,19 @@ export function createBot(config: Config, store: Store) {
         ctx.chat.id,
         msg.message_id,
         text,
+        request,
+        context,
       );
-      if (!verdict || verdict.label === "normal") return;
+      if (!verdict) {
+        store.reviewResult(sample, "quota_skipped");
+        return;
+      }
+      store.reviewResult(
+        sample,
+        settings.moderation === "observe" ? "observed" : "kept",
+        verdict,
+      );
+      if (verdict.label === "normal") return;
       console.info(
         JSON.stringify({
           event: "moderation",
@@ -203,14 +275,18 @@ export function createBot(config: Config, store: Store) {
         ["advertisement", "scam"].includes(verdict.label)
       ) {
         const member = await ctx.getChatMember(msg.from.id);
-        if (["administrator", "creator"].includes(member.status)) return;
+        if (["administrator", "creator"].includes(member.status)) {
+          store.forgetReviewSender(ctx.chat.id, msg.from.id);
+          return;
+        }
         await ctx.deleteMessage();
+        store.reviewResult(sample, "deleted");
       }
     } catch (error) {
-      // API failure, malformed output, or quota exhaustion never causes a deletion.
+      store.reviewResult(sample, "provider_error");
       console.error(
         "审核未完成，保留消息",
-        error instanceof Error ? error.message : "unknown error",
+        error instanceof Error ? error.name : "unknown error",
       );
     }
   });
@@ -225,6 +301,7 @@ export function createBot(config: Config, store: Store) {
   );
 
   async function sweep() {
+    store.pruneReview(config);
     for (const item of store.active()) {
       await queue.run(item.chat_id, () => processJoin(item.id));
     }
@@ -286,4 +363,18 @@ function safeError(error: unknown): string {
   }
   // Network exception messages may contain Bot API URLs, including tokens.
   return error instanceof Error ? error.name : "UnknownError";
+}
+
+function messageKind(message: Message): string | undefined {
+  if (message.text !== undefined) return "text";
+  if (message.photo) return "photo";
+  if (message.video) return "video";
+  if (message.animation) return "animation";
+  if (message.sticker) return "sticker";
+  if (message.document) return "document";
+  if (message.voice) return "voice";
+  if (message.audio) return "audio";
+  if (message.video_note) return "video_note";
+  if (message.poll) return "poll";
+  return undefined;
 }

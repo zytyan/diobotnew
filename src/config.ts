@@ -16,6 +16,9 @@ export interface Config {
   moderationMode: "off" | "observe" | "delete";
   aiDailyLimit: number;
   aiThreshold: number;
+  reviewDays: number;
+  reviewPerChat: number;
+  reviewMax: number;
 }
 
 function ids(value = ""): Set<number> {
@@ -37,6 +40,15 @@ export function loadConfig(env = Deno.env.toObject()): Config {
   if (!Number.isFinite(aiThreshold) || aiThreshold < 0.5 || aiThreshold > 1) {
     throw new Error("AI_CONFIDENCE_THRESHOLD 必须在 0.5 到 1 之间");
   }
+  const reviewDays = Number(env.REVIEW_RETENTION_DAYS ?? "7");
+  const reviewPerChat = Number(env.REVIEW_MESSAGES_PER_CHAT ?? "1000");
+  const reviewMax = Number(env.REVIEW_MAX_MESSAGES ?? "10000");
+  if (
+    !Number.isInteger(reviewDays) || reviewDays < 0 || reviewDays > 30 ||
+    !Number.isInteger(reviewPerChat) || reviewPerChat < 1 ||
+    reviewPerChat > 10000 || !Number.isInteger(reviewMax) || reviewMax < 1 ||
+    reviewMax > 100000
+  ) throw new Error("近期样本保留期限或数量无效");
   if (!env.BOT_TOKEN) throw new Error("必须配置 BOT_TOKEN");
   if (environment !== "prod" && environment !== "test") {
     throw new Error("TELEGRAM_ENV 必须是 prod 或 test");
@@ -86,5 +98,8 @@ export function loadConfig(env = Deno.env.toObject()): Config {
     moderationMode: moderationMode as Config["moderationMode"],
     aiDailyLimit,
     aiThreshold,
+    reviewDays,
+    reviewPerChat,
+    reviewMax,
   };
 }
