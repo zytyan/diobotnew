@@ -1,0 +1,29 @@
+{
+  "imports": {
+    "grammy": "npm:grammy@1.46.0",
+    "grammy/types": "npm:grammy@1.46.0/types",
+    "@grammyjs/runner": "npm:@grammyjs/runner@2.0.3"
+  },
+  "tasks": {
+    "dev": "deno run --watch --env-file=.env --allow-env --allow-net --allow-read --allow-write src/main.ts",
+    "start": "deno run --env-file=.env --allow-env --allow-net --allow-read --allow-write src/main.ts",
+    "check": "deno fmt --check && deno lint && deno check src/main.ts tests/*.ts",
+    "test": "deno test --allow-env --allow-read --allow-write tests/",
+    "compile": "deno compile --allow-env --allow-net --allow-read --allow-write --include web/index.html --output dist/diobot src/main.ts"
+  },
+  "compilerOptions": {
+    "strict": true
+  },
+  "fmt": {
+    "exclude": [
+      "dist",
+      "data"
+    ]
+  },
+  "lint": {
+    "exclude": [
+      "dist",
+      "data"
+    ]
+  }
+}

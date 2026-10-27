@@ -1,0 +1,24 @@
+[Unit]
+Description=Diobot (grammY / TypeScript / Deno compiled)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tgnoperm
+Group=tgbots
+WorkingDirectory=/opt/tgbots/diobotnew
+EnvironmentFile=/opt/tgbots/diobotnew/.env
+ExecStart=/opt/tgbots/diobotnew/dist/diobot
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=45
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/tgbots/diobotnew/data
+
+[Install]
+WantedBy=multi-user.target
