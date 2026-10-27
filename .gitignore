@@ -1,0 +1,10 @@
+/.idea/
+/.vscode/
+/diobot.service
+/diobotnew
+/.env
+/.env.*
+!/.env.example
+/data/
+/dist/
+/node_modules/
