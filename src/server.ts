@@ -41,7 +41,7 @@ export function createHandler(
         return json(403, { error: "没有对应的入群申请" });
       }
       if (
-        join.state === "verified" || join.state === "speech" ||
+        join.state === "verified" ||
         join.state === "done"
       ) return json(200, { success: true });
       if (join.state !== "pending" || join.expires <= Date.now()) {
@@ -81,6 +81,7 @@ export function createHandler(
         },
       );
       if (!response.ok) {
+        await response.body?.cancel();
         return json(503, { error: "验证服务暂时不可用，请重试" });
       }
       const result = await response.json();
@@ -98,7 +99,7 @@ export function createHandler(
       const changed = store.resolve(join.id, auth.user, success);
       if (!changed) {
         const current = store.get(join.id);
-        if (current && ["verified", "speech", "done"].includes(current.state)) {
+        if (current && ["verified", "done"].includes(current.state)) {
           return json(200, { success: true });
         }
         return json(410, { error: "申请已失效，请重新申请入群" });

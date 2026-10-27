@@ -2,17 +2,12 @@ import { Bot, GrammyError } from "grammy";
 import type { ChatPermissions, User } from "grammy/types";
 import { ChatQueue } from "./queue.ts";
 import type { Config } from "./config.ts";
-import type { Join, Store } from "./store.ts";
+import type { Store } from "./store.ts";
 import { moderate } from "./moderation.ts";
+import { createAdmin } from "./admin.ts";
 
 const fullName = (user: User) =>
   [user.first_name, user.last_name].filter(Boolean).join(" ");
-const escapeHtml = (s: string) =>
-  s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-const mention = (id: number, name = "新成员") =>
-  `<a href="tg://user?id=${id}">${escapeHtml(name)}</a>`;
-
 export function createBot(config: Config, store: Store) {
   const bot = new Bot(config.token, {
     client: {
@@ -37,6 +32,7 @@ export function createBot(config: Config, store: Store) {
     }
     await next();
   });
+  const admin = createAdmin(bot, config, store);
   bot.command("start", async (ctx) => {
     if (ctx.chat.type !== "private") return;
     await ctx.reply("我是群管理 bot。入群验证请使用申请入群后收到的专属链接。");
@@ -63,7 +59,7 @@ export function createBot(config: Config, store: Store) {
   bot.on("my_chat_member", () => {});
   bot.on("chat_join_request", async (ctx) => {
     const req = ctx.chatJoinRequest;
-    if (config.publicChats.has(req.chat.id)) {
+    if (!admin.settings(req.chat.id).verification) {
       await ctx.approveChatJoinRequest(req.from.id);
       return;
     }
@@ -81,16 +77,41 @@ export function createBot(config: Config, store: Store) {
     const name = fullName(user);
     if (after.status === "left") {
       store.cancel(event.chat.id, user.id);
-      await ctx.reply(`${name}先生好走！`);
+      store.memberLeft(event.chat.id, user.id);
+      const wasPresent =
+        ["member", "administrator", "creator"].includes(before.status) ||
+        (before.status === "restricted" && before.is_member);
+      if (!wasPresent) return; // Unbanning an absent user is not a new departure.
+      const notices = admin.settings(event.chat.id);
+      if (event.from.id !== user.id) {
+        if (notices.kicked) await ctx.reply(`${name}被管理员移出了本群。`);
+      } else if (notices.leave) {
+        await ctx.reply(`${name}先生好走！`);
+      }
       return;
     }
     if (after.status === "kicked") {
       store.cancel(event.chat.id, user.id);
-      await ctx.reply(
-        after.until_date === 0
-          ? `${name}被管理的大手处理，永远离开了我们`
-          : `${name}被管理的大手处理，暂时离开了我们`,
-      );
+      store.memberLeft(event.chat.id, user.id);
+      if (admin.settings(event.chat.id).kicked) {
+        await ctx.reply(
+          after.until_date === 0
+            ? `${name}被管理的大手处理，永远离开了我们`
+            : `${name}被管理的大手处理，暂时离开了我们`,
+        );
+      }
+      if (
+        after.until_date === 0 &&
+        !(before.status === "kicked" && before.until_date === 0) &&
+        !event.from.is_bot
+      ) {
+        await admin.offer(
+          event.chat.id,
+          event.from.id,
+          user.id,
+          `${event.chat.id}:${user.id}:${event.date}`,
+        );
+      }
       return;
     }
     const wasMember =
@@ -100,12 +121,18 @@ export function createBot(config: Config, store: Store) {
       ["member", "administrator", "creator"].includes(after.status) ||
       (after.status === "restricted" && after.is_member);
     if (wasMember || !isMember || user.id === bot.botInfo.id) return;
-    if (config.publicChats.has(event.chat.id)) {
-      await ctx.reply(`欢迎${name}加入本群！`);
-      return;
+    store.memberLeft(event.chat.id, user.id);
+    const directlyInvited = !event.invite_link && !event.via_join_request &&
+      event.from.id !== user.id;
+    if (directlyInvited) {
+      store.invited(event.chat.id, event.from.id, user.id, name, event.date);
     }
-    if (event.invite_link?.creates_join_request || event.via_join_request) {
-      await beginSpeech(store.create(event.chat.id, user.id, "speech"), name);
+    const settings = admin.settings(event.chat.id);
+    if (
+      !settings.verification || event.invite_link?.creates_join_request ||
+      event.via_join_request
+    ) {
+      if (settings.welcome) await ctx.reply(`欢迎${name}加入本群！`);
       return;
     }
     if (event.invite_link) {
@@ -126,6 +153,7 @@ export function createBot(config: Config, store: Store) {
       }
       return;
     }
+    if (!settings.welcome) return;
     if (event.from.id !== user.id) {
       await ctx.reply(
         user.is_bot
@@ -145,18 +173,10 @@ export function createBot(config: Config, store: Store) {
       msg.new_chat_members || msg.left_chat_member || !msg.from ||
       msg.from.is_bot
     ) return;
-    const speech = store.spoke(ctx.chat.id, msg.from.id);
-    if (speech?.message_id) {
-      await bot.api.editMessageText(
-        ctx.chat.id,
-        speech.message_id,
-        `欢迎${mention(msg.from.id, fullName(msg.from))}先生加入本群！`,
-        { parse_mode: "HTML" },
-      ).catch(() => {});
-    }
+    const settings = admin.settings(ctx.chat.id);
     if (
-      !config.publicChats.has(ctx.chat.id) || config.moderationMode === "off" ||
-      config.owners.has(msg.from.id)
+      settings.moderation === "off" || config.owners.has(msg.from.id) ||
+      msg.ephemeral_message_id
     ) return;
     const text = msg.text ?? msg.caption;
     if (!text) return;
@@ -174,12 +194,12 @@ export function createBot(config: Config, store: Store) {
           event: "moderation",
           chat: ctx.chat.id,
           message: msg.message_id,
-          mode: config.moderationMode,
+          mode: settings.moderation,
           ...verdict,
         }),
       );
       if (
-        config.moderationMode === "delete" && verdict.certainty === "high" &&
+        settings.moderation === "delete" && verdict.certainty === "high" &&
         ["advertisement", "scam"].includes(verdict.label)
       ) {
         const member = await ctx.getChatMember(msg.from.id);
@@ -204,27 +224,19 @@ export function createBot(config: Config, store: Store) {
     )
   );
 
-  async function beginSpeech(join: Join, name = "新成员") {
-    const msg = await bot.api.sendMessage(
-      join.chat_id,
-      `欢迎${
-        mention(join.user_id, name)
-      }先生加入本群，和大家随便说点什么证明您是人类吧，否则bot还是会在10分钟后请您出去。`,
-      { parse_mode: "HTML" },
-    );
-    store.message(join.id, msg.message_id);
-  }
-
   async function sweep() {
     for (const item of store.active()) {
       await queue.run(item.chat_id, () => processJoin(item.id));
+    }
+    for (const job of store.treeJobs()) {
+      await queue.run(job.chat_id, () => admin.processTree(job));
     }
   }
   async function processJoin(id: string) {
     // Pending joins use durable deadlines. Never hold an update handler for minutes.
     let join = store.get(id);
     if (!join) return;
-    if (join.state === "pending" || join.state === "speech") {
+    if (join.state === "pending") {
       if (join.expires > Date.now()) return;
       store.state(join.id, "failed");
       join = store.get(join.id)!;
@@ -235,7 +247,7 @@ export function createBot(config: Config, store: Store) {
         if (join.kind === "request") {
           await bot.api.declineChatJoinRequest(join.chat_id, join.user_id);
         } else await bot.api.banChatMember(join.chat_id, join.user_id);
-        store.state(join.id, "done");
+        store.state(join.id, "rejected");
       } else if (join.kind === "request") {
         await bot.api.approveChatJoinRequest(join.chat_id, join.user_id);
         store.state(join.id, "done");
@@ -246,14 +258,16 @@ export function createBot(config: Config, store: Store) {
           JSON.parse(join.permissions) as ChatPermissions,
           { use_independent_chat_permissions: true },
         );
-        store.state(join.id, "speech", Date.now() + 600_000);
-        await beginSpeech(store.get(join.id)!);
+        store.state(join.id, "done");
+        if (admin.settings(join.chat_id).welcome) {
+          await bot.api.sendMessage(join.chat_id, `欢迎新成员加入本群！`);
+        }
       }
     } catch (error) {
       // Permanent permission/invalid-chat errors cannot succeed by retrying forever.
       if (
         error instanceof GrammyError && [400, 403].includes(error.error_code)
-      ) store.state(join.id, "done");
+      ) store.state(join.id, "rejected");
       console.error(
         JSON.stringify({
           event: "join_action_failed",

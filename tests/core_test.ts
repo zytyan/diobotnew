@@ -87,7 +87,7 @@ Deno.test("同一用户的不同群申请隔离，重申请淘汰旧链接，终
     store.close();
   }
 });
-Deno.test("验证允许三次失败，发言检查和群移除能取消超时任务", () => {
+Deno.test("验证允许三次失败，群移除能取消超时任务", () => {
   const store = new Store(":memory:");
   try {
     const row = store.create(-1, 42, "direct", {}, now);
@@ -97,9 +97,6 @@ Deno.test("验证允许三次失败，发言检查和群移除能取消超时任
     store.resolve(row.id, 42, false, now);
     assert(store.get(row.id)?.state === "failed");
     assert(!store.resolve(row.id, 42, true, now));
-    const speech = store.create(-1, 42, "speech", {}, now);
-    assert(store.spoke(-1, 42)?.id === speech.id);
-    assert(store.get(speech.id)?.state === "done");
     store.create(-1, 44, "request", {}, now);
     store.cancel(-1);
     assert(store.active().length === 0);
@@ -131,9 +128,12 @@ Deno.test("SQLite 重开保留申请、群使用记录和日请求额度", () =>
     Deno.removeSync(dir, { recursive: true });
   }
 });
-Deno.test("生产环境禁止缺省与测试 key，审核必须配置服务凭据", async () => {
+Deno.test("验证配置可整体省略，禁止部分配置与生产测试 key", async () => {
   assert(config().environment === "test");
-  await rejects(() => loadConfig({ BOT_TOKEN: token }));
+  assert(loadConfig({ BOT_TOKEN: token }).siteKey === "");
+  await rejects(() =>
+    loadConfig({ BOT_TOKEN: token, TURNSTILE_SECRET: "partial" })
+  );
   await rejects(() =>
     loadConfig({
       BOT_TOKEN: token,

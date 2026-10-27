@@ -1,0 +1,16 @@
+{
+  "imports": {
+    "grammy": "npm:grammy@1.46.0",
+    "grammy/types": "npm:grammy@1.46.0/types",
+    "@grammyjs/runner": "npm:@grammyjs/runner@2.0.3",
+    "telegram": "npm:telegram@2.26.22",
+    "telegram/sessions": "npm:telegram@2.26.22/sessions/index.js"
+  },
+  "compilerOptions": {
+    "strict": true
+  },
+  "tasks": {
+    "login": "deno run --no-prompt --allow-env --allow-sys --allow-net --allow-read --allow-write telegram_login.ts"
+  },
+  "extends": "../deno.json"
+}

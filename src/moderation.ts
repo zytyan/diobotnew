@@ -29,7 +29,6 @@ export async function moderate(
   message: number,
   text: string,
 ): Promise<Verdict | undefined> {
-  if (config.moderationMode === "off") return;
   const cached = store.cached(chat, message, text);
   if (cached) return parseVerdict(cached);
   if (!store.spend(config.aiDailyLimit)) return;

@@ -46,7 +46,8 @@ export function loadConfig(env = Deno.env.toObject()): Config {
     throw new Error("AI_DAILY_LIMIT 无效");
   }
   if (
-    !env.TURNSTILE_SITE_KEY || !env.TURNSTILE_SECRET || !env.VERIFY_HOSTNAME
+    (env.TURNSTILE_SITE_KEY || env.TURNSTILE_SECRET || env.VERIFY_HOSTNAME) &&
+    (!env.TURNSTILE_SITE_KEY || !env.TURNSTILE_SECRET || !env.VERIFY_HOSTNAME)
   ) {
     throw new Error(
       "必须配置 Turnstile keys 和 VERIFY_HOSTNAME（不自动回退测试 key）",
@@ -54,8 +55,8 @@ export function loadConfig(env = Deno.env.toObject()): Config {
   }
   if (
     environment === "prod" &&
-    (env.TURNSTILE_SITE_KEY.startsWith("1x000000") ||
-      env.TURNSTILE_SECRET.startsWith("1x000000"))
+    (env.TURNSTILE_SITE_KEY?.startsWith("1x000000") ||
+      env.TURNSTILE_SECRET?.startsWith("1x000000"))
   ) {
     throw new Error("正式环境不允许使用 Turnstile 测试 key");
   }
@@ -69,9 +70,9 @@ export function loadConfig(env = Deno.env.toObject()): Config {
     hostname: env.HOST ?? "127.0.0.1",
     port,
     dbPath: env.DB_PATH ?? "data/diobot.sqlite",
-    siteKey: env.TURNSTILE_SITE_KEY,
-    secret: env.TURNSTILE_SECRET,
-    verifyHostname: env.VERIFY_HOSTNAME,
+    siteKey: env.TURNSTILE_SITE_KEY ?? "",
+    secret: env.TURNSTILE_SECRET ?? "",
+    verifyHostname: env.VERIFY_HOSTNAME ?? "",
     publicChats: ids(env.PUBLIC_CHAT_IDS),
     owners: ids(env.OWNER_IDS),
     cfAccount: env.CF_ACCOUNT_ID ?? "",

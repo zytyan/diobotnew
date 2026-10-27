@@ -92,12 +92,12 @@ Deno.test("真实 handler：普通申请发私信，验证成功由后台审批�
         c.method === "declineChatJoinRequest" && c.payload.user_id === 43
       ),
     );
-    assert(store.get(expired.id)?.state === "done");
+    assert(store.get(expired.id)?.state === "rejected");
   } finally {
     store.close();
   }
 });
-Deno.test("后台恢复群权限而非全开权限；发言后不再执行超时封禁", async () => {
+Deno.test("后台恢复群权限后直接完成，不再创建发言检查", async () => {
   const { bot, sweep, store, calls } = setup();
   try {
     await bot.init();
@@ -113,7 +113,7 @@ Deno.test("后台恢复群权限而非全开权限；发言后不再执行超时
       (restrict.payload.permissions as Record<string, boolean>)
         .can_send_photos === false,
     );
-    assert(store.get(row.id)?.state === "speech");
+    assert(store.get(row.id)?.state === "done");
     await bot.handleUpdate({
       update_id: 2,
       message: {
