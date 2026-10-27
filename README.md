@@ -7,7 +7,9 @@ Telegram 群管理工具，TypeScript + grammY + Deno
 
 `archive/go-legacy` 保存原 Go 源码，`main` 是 TS 版。原目录没有 Git
 仓库，因此归档是新建的源码快照。旧二进制 `diobotnew` 和含部署密钥的本机
-`diobot.service` 保留且不提交；新版没有自动替换旧服务。
+`diobot.service` 保留且不提交；正式 `diobot.service` 已切换到
+`bin/diobot`，正式数据库为 `var/diobot.sqlite`。原 Go 程序保留，原服务配置备份在
+Git 忽略的 `data/deploy/diobot-go.service.backup`。
 
 ## 群配置
 
@@ -97,19 +99,24 @@ bot Telegram 管理员权限。
 ## AI 审核
 
 配置 `CF_ACCOUNT_ID` 和
-`CF_API_TOKEN`，然后在群面板开启“仅观察”，评估实际消息后再切换自动删除。审核适用于任何开启此功能的群，与入群验证独立。
+`CF_API_TOKEN`，在群面板开启“仅观察”，评估实际消息后再切换自动删除。审核与入群验证独立，适用于任何开启此功能的群。
 
-审核新消息及编辑消息的文本和媒体说明，默认
-Qwen3；没有图片像素识别、OCR、语音识别或聊天上下文。管理员的消息不会自动删除，`OWNER_IDS`
+默认使用 `@cf/cloudflare/clef-flash` 的原生 state/questions
+决策接口。只审核新消息和编辑消息中的文本及媒体说明；没有图片像素识别、OCR、语音识别或聊天上下文。管理员消息不会自动删除，`OWNER_IDS`
 的消息直接跳过。
 
-模型返回正常、广告、诈骗或不确定及 high/low
-自评标签（不是校准概率）。仅在自动删除模式下删除 high
-的广告或诈骗，不自动禁言或封号。API 故障、异常结果和额度耗尽时保留消息。
+模型输出正常、广告、诈骗、不确定四个选项的概率。数值范围、概率总和和分类一致性均须通过校验；模型选择的分类达到
+`AI_CONFIDENCE_THRESHOLD`（默认 0.98）才标为
+high。模型概率不代表实际正确率。仅在自动删除模式下删除 high
+的广告或诈骗，不自动禁言或封号；网络故障、输出异常或配额耗尽时保留消息。
 
-`AI_DAILY_LIMIT` 为本数据库每天 UTC 的请求次数上限，不等同于 Cloudflare Neurons
-额度；失败调用也计数。未改变的同一条消息复用已存结果。文本会发送到
-Cloudflare，并连同分类保存在本地审核表；目前不自动清理。
+`CF_MODEL` 也支持 `@cf/cloudflare/clef`。通用文本模型适配保留，Qwen
+使用关闭思考的 raw 模板和 JSON 输出模式，不把内部 reasoning
+当成最终结论。更换模型、策略或阈值后，旧缓存失效。
+
+`AI_DAILY_LIMIT` 是本数据库每天 UTC 的调用次数限制，不等于 Cloudflare 免费
+Neurons 额度，失败调用也计数。相同消息复用匹配当前模型和策略的结果。文本发送到
+Cloudflare，并连同分类及概率保存在本地审核表，目前不自动清理。
 
 ## 检查与二进制
 
@@ -125,9 +132,9 @@ deno task compile
 MB。密钥通过进程环境提供，不会嵌入产物。开发启动任务读取 `.env`，独立二进制由
 systemd 的 `EnvironmentFile` 加载配置。`--check` 只验证配置，不连接 Telegram。
 
-`deploy/diobot-ts.service` 是尚未安装的服务模板。部署前创建 `data/` 并确保
-`tgnoperm:tgbots` 可写，准备 `.env`。切换时先停旧实例，同一 token
-不能同时运行两个 polling 进程。
+`deploy/diobot-ts.service` 是正式服务模板。部署前将编译产物安装到
+`bin/diobot`，创建 `var/` 并确保 `tgnoperm:tgbots` 可写，准备权限为 0600 的
+`.env`。切换时先停旧实例，同一 token 不能同时运行两个 polling 进程。
 
 ## 实际 API 测试工具
 
@@ -156,3 +163,31 @@ config、env-file 和权限参数。
 启动独立测试实例（127.0.0.1:18532，单独 manual.sqlite），在测试群内操作
 `/settings` 面板。Ctrl+C 退出；不要与 `test:telegram`
 同时运行，二者使用同一个测试 bot token。
+
+## 当前 Cloudflare 部署
+
+- 正式验证页：`https://tgv.zchan.moe/`，复用该 bot 原有真实 Turnstile widget。
+- 测试验证页：`https://tgv-test.zchan.moe/`，独立真实 widget，测试 bot 主 Mini
+  App 已指向此 URL。
+- 两个域名通过现有 Cloudflare Tunnel 分别访问本地 8532 /
+  18532；其他隧道路由保持原目的地。
+- Workers AI 使用独立的最小权限运行令牌，不依赖 CLI 的短期
+  OAuth。运行配置和部署备份均不提交 Git。
+- 群管理员通过 `/settings`
+  开启审核。测试群当前启用观察模式；正式群以各自持久化设置为准。
+
+实际 CF 联调任务（只用于已授权的测试夹具）：
+
+```sh
+deno task test:cloudflare     # 合成文本直接经过真实 Clef 适配器
+deno task test:cf-live        # 向隔离群发送样本，由运行中的测试二进制调用真实 Clef
+deno task test:turnstile     # Telegram 真实签名身份 + 公网后端 + 真实 Turnstile 无效 token 拒绝
+```
+
+最后一项不伪造验证码成功。真正的人机验证成功流程仍需在 Telegram 客户端中完成一次
+challenge。
+
+回滚正式服务时可停止 `diobot.service`，将私密备份
+`data/deploy/diobot-go.service.backup` 恢复到
+`/etc/systemd/system/diobot.service`，执行 `systemctl daemon-reload`
+后启动。旧二进制 `diobotnew` 没有被覆盖。

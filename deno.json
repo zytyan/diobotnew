@@ -12,7 +12,10 @@
     "compile": "deno compile --allow-env --allow-net --allow-read --allow-write --include web/index.html --output dist/diobot src/main.ts",
     "check:tools": "deno check --config tools/deno.json tools/*.ts",
     "test:telegram": "deno run --no-prompt --config tools/deno.json --env-file=.env.telegram --allow-env --allow-sys --allow-net --allow-read --allow-write tools/integration_test.ts",
-    "test:serve": "deno run --allow-read --allow-run=./dist/diobot tools/serve_test.ts"
+    "test:serve": "deno run --allow-read --allow-run=./dist/diobot tools/serve_test.ts",
+    "test:cloudflare": "deno run --config tools/deno.json --allow-env --allow-net --allow-read --allow-write tools/cloudflare_test.ts",
+    "test:cf-live": "deno run --no-prompt --config tools/deno.json --env-file=.env.telegram --allow-env --allow-sys --allow-net --allow-read --allow-write tools/cf_live_test.ts",
+    "test:turnstile": "deno run --no-prompt --config tools/deno.json --env-file=.env.telegram --allow-env --allow-sys --allow-net --allow-read --allow-write tools/turnstile_live_test.ts"
   },
   "compilerOptions": {
     "strict": true

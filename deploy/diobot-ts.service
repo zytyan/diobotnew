@@ -9,7 +9,7 @@ User=tgnoperm
 Group=tgbots
 WorkingDirectory=/opt/tgbots/diobotnew
 EnvironmentFile=/opt/tgbots/diobotnew/.env
-ExecStart=/opt/tgbots/diobotnew/dist/diobot
+ExecStart=/opt/tgbots/diobotnew/bin/diobot
 Restart=on-failure
 RestartSec=5
 KillSignal=SIGTERM
@@ -18,7 +18,7 @@ UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/opt/tgbots/diobotnew/data
+ReadWritePaths=/opt/tgbots/diobotnew/var
 
 [Install]
 WantedBy=multi-user.target

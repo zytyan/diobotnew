@@ -15,6 +15,7 @@ export interface Config {
   cfModel: string;
   moderationMode: "off" | "observe" | "delete";
   aiDailyLimit: number;
+  aiThreshold: number;
 }
 
 function ids(value = ""): Set<number> {
@@ -32,6 +33,10 @@ export function loadConfig(env = Deno.env.toObject()): Config {
   const moderationMode = env.MODERATION_MODE ?? "off";
   const port = Number(env.PORT ?? "8532");
   const aiDailyLimit = Number(env.AI_DAILY_LIMIT ?? "1000");
+  const aiThreshold = Number(env.AI_CONFIDENCE_THRESHOLD ?? "0.98");
+  if (!Number.isFinite(aiThreshold) || aiThreshold < 0.5 || aiThreshold > 1) {
+    throw new Error("AI_CONFIDENCE_THRESHOLD 必须在 0.5 到 1 之间");
+  }
   if (!env.BOT_TOKEN) throw new Error("必须配置 BOT_TOKEN");
   if (environment !== "prod" && environment !== "test") {
     throw new Error("TELEGRAM_ENV 必须是 prod 或 test");
@@ -77,8 +82,9 @@ export function loadConfig(env = Deno.env.toObject()): Config {
     owners: ids(env.OWNER_IDS),
     cfAccount: env.CF_ACCOUNT_ID ?? "",
     cfToken: env.CF_API_TOKEN ?? "",
-    cfModel: env.CF_MODEL ?? "@cf/qwen/qwen3-30b-a3b-fp8",
+    cfModel: env.CF_MODEL ?? "@cf/cloudflare/clef-flash",
     moderationMode: moderationMode as Config["moderationMode"],
     aiDailyLimit,
+    aiThreshold,
   };
 }
