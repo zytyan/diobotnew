@@ -1,20 +1,18 @@
 // All synchronous WASM work runs in a disposable worker, with a caller deadline.
+import { decodeMedia } from "./wasm_media.ts";
+import type { RgbFrame } from "./media_pixels.ts";
+type WorkerInput = RgbFrame | { json: Uint8Array } | {
+  media: Uint8Array;
+  webm: boolean;
+};
 const workerScope = globalThis as unknown as {
-  onmessage: (
-    event: MessageEvent<
-      { rgb: Uint8Array; width: number; height: number; json?: Uint8Array }
-    >,
-  ) => void;
+  onmessage: (event: MessageEvent<WorkerInput>) => void;
   postMessage: (data: unknown) => void;
 };
-workerScope.onmessage = async (
-  { data }: MessageEvent<
-    { rgb: Uint8Array; width: number; height: number; json?: Uint8Array }
-  >,
-) => {
+workerScope.onmessage = async ({ data }: MessageEvent<WorkerInput>) => {
   try {
-    let frame = data;
-    if (data.json) {
+    let frame: RgbFrame;
+    if ("json" in data) {
       const env = new Proxy<Record<string, (...args: number[]) => number>>({
         emscripten_notify_memory_growth: () => 0,
         __syscall_getcwd: () => -2,
@@ -72,7 +70,9 @@ workerScope.onmessage = async (
         width,
         height,
       };
-    }
+    } else if ("media" in data) {
+      frame = await decodeMedia(data.media, data.webm);
+    } else frame = data;
     if (
       !Number.isInteger(frame.width) || !Number.isInteger(frame.height) ||
       frame.width < 1 || frame.height < 1 ||

@@ -251,10 +251,11 @@ Sticker。
 revision，旧页面提交会提示重新加载。每群每类最多1000条，SQLite 持久保存。
 
 图片支持 Telegram photo 及 JPEG、PNG、WebP 图片文件，不包含普通视频和
-GIF。静态图片与 WebM 使用 FFmpeg 解码，WebM 只取第一帧；TGS 使用嵌入的 rlottie
-WASM 渲染第一帧，透明区域统一白底，再由 PDQ WASM 计算256位 hash 和0–100
-Quality。两种 WASM 均在有截止时间的 Worker 中执行，不下载运行时代码，也不使用
-Telegram 缩略图代替原媒体。
+GIF。静态图片与 WebM 使用嵌入的精简媒体解码 WASM，WebM
+只取第一帧并保留透明通道；TGS 使用嵌入的 rlottie WASM
+渲染第一帧，透明区域统一白底，再由 PDQ WASM 计算256位 hash 和0–100
+Quality。所有解码、渲染和 hash 均在有截止时间的 WASM Worker
+中执行，不下载运行时代码，也不使用 Telegram 缩略图代替原媒体。
 
 PDQ 最大汉明距离默认31（可设0–256），最低 Quality
 默认50（可设0–100）。当前媒体和名单条目的 Quality
@@ -265,7 +266,7 @@ Quality 限制。名单按图片和 Sticker 分开匹配。
 下载限制20 MiB，解码上限1600万像素，TGS解压上限4
 MiB；单项处理限时10秒，全局最多同时处理两项。下载、解码或 hash
 失败保留消息、记日志并继续原正则和 AI 流程。计算缓存按 unique ID
-和处理版本复用，最多10000项；临时媒体处理完即删除。`/check`
+和处理版本复用，最多10000项；媒体解码在内存中完成，不创建临时媒体文件。`/check`
 显示媒体黑名单的实际历史结果或当前匹配依据，包括距离及双方 Quality，但不会处罚。
 
 `GET /api/media-blacklist` 获取本群名单与策略；`POST` 添加条目，或使用
@@ -273,9 +274,10 @@ MiB；单项处理限时10秒，全局最多同时处理两项。下载、解码
 revision；添加 PDQ 需64位十六进制 hash 和 Quality。认证和权限与 `/api/settings`
 一致，不接受未签名的目标群。旧客户端不传 `media` 时保留已有媒体设置。
 
-构建使用固定上游版本，详情见 [native/README.md](native/README.md)。运行时需要
-`/usr/bin/ffmpeg` 和
-`/usr/bin/ffprobe`，编译任务已限定允许执行这两个程序。发布前执行
+构建使用固定上游版本，详情见 [native/README.md](native/README.md)。运行时只需要
+bot 二进制：图片/WebM 解码、TGS 渲染和 PDQ 的 WASM 均已嵌入，不需要安装
+FFmpeg、FFprobe、Lottie 或其他外部程序，也不需要
+`--allow-run`。媒体处理完全在内存中完成，不落地临时媒体文件。发布前执行
 `./dist/diobot --check-media`，离线验证嵌入的 PDQ、rlottie、Worker
 和解码链，不连接
 Telegram、不修改运行数据库。部署可保留默认关闭，再由各群管理员分别启用。

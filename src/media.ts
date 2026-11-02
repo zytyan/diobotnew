@@ -132,35 +132,10 @@ async function bounded(
   }
   return bytes;
 }
-export function pamRgb(
-  pam: Uint8Array,
-): { rgb: Uint8Array; width: number; height: number } {
-  const head = new TextDecoder().decode(pam.subarray(0, 512));
-  const end = head.indexOf("ENDHDR\n");
-  if (!head.startsWith("P7\n") || end < 0) throw new Error("首帧格式无效");
-  const width = Number(head.match(/\nWIDTH (\d+)/)?.[1]);
-  const height = Number(head.match(/\nHEIGHT (\d+)/)?.[1]);
-  if (
-    !width || !height || width * height > 16_000_000 ||
-    !head.includes("\nDEPTH 4\n") || !head.includes("\nMAXVAL 255\n")
-  ) throw new Error("媒体尺寸无效或超过1600万像素");
-  const pixels = pam.subarray(end + 7);
-  if (pixels.length !== width * height * 4) throw new Error("首帧数据不完整");
-  const rgb = new Uint8Array(width * height * 3);
-  for (let i = 0, j = 0; i < pixels.length; i += 4) {
-    const alpha = pixels[i + 3];
-    for (let c = 0; c < 3; c++) {
-      rgb[j++] = Math.round(
-        (pixels[i + c] * alpha + 255 * (255 - alpha)) / 255,
-      );
-    }
-  }
-  return { rgb, width, height };
-}
 export async function pdqRgb(
   frame: { rgb: Uint8Array; width: number; height: number } | {
     json: Uint8Array;
-  },
+  } | { media: Uint8Array; webm: boolean },
   signal?: AbortSignal,
 ): Promise<PdqResult> {
   signal?.throwIfAborted();
@@ -189,50 +164,6 @@ export async function pdqRgb(
     worker.postMessage(frame);
   });
 }
-async function command(
-  exe: string,
-  args: string[],
-  signal: AbortSignal,
-  input?: Uint8Array,
-  max = 64_001_024,
-) {
-  signal.throwIfAborted();
-  const child = new Deno.Command(exe, {
-    args,
-    clearEnv: true,
-    env: { PATH: "/usr/bin:/bin", LANG: "C", OPENBLAS_NUM_THREADS: "1" },
-    stdin: input ? "piped" : "null",
-    stdout: "piped",
-    stderr: "null",
-    signal,
-  }).spawn();
-  const writing = input
-    ? (async () => {
-      const writer = child.stdin.getWriter();
-      try {
-        await writer.write(input);
-        await writer.close();
-      } finally {
-        writer.releaseLock();
-      }
-    })()
-    : Promise.resolve();
-  try {
-    const [bytes, status] = await Promise.all([
-      bounded(child.stdout, max),
-      child.status,
-      writing,
-    ]);
-    if (!status.success) throw new Error("媒体解码失败");
-    return bytes;
-  } catch (error) {
-    try {
-      child.kill("SIGKILL");
-    } catch { /* already exited */ }
-    await child.status;
-    throw error;
-  }
-}
 export class MediaService {
   constructor(
     private store: MediaStore,
@@ -248,82 +179,26 @@ export class MediaService {
       if (this.compute) return await this.compute(source);
       const signal = AbortSignal.timeout(10_000);
       const bytes = await this.download(source, signal);
-      const temp = await Deno.makeTempDir({ prefix: "diobot-media-" });
-      try {
-        let pam: Uint8Array;
-        if (source.format === "tgs") {
-          const json = await bounded(
-            new Blob([bytes.slice().buffer]).stream().pipeThrough(
-              new DecompressionStream("gzip"),
-            ),
-            4_194_304,
-          );
-          return await pdqRgb({ json }, signal);
-        } else {
-          if (
-            source.document &&
-            !(bytes[0] === 0xff && bytes[1] === 0xd8 ||
-              bytes[0] === 0x89 && bytes[1] === 0x50 ||
-              new TextDecoder().decode(bytes.subarray(0, 4)) === "RIFF" &&
-                new TextDecoder().decode(bytes.subarray(8, 12)) === "WEBP")
-          ) throw new Error("图片文件格式不支持");
-          const path = `${temp}/input`;
-          await Deno.writeFile(path, bytes);
-          const info = JSON.parse(
-            new TextDecoder().decode(
-              await command(
-                this.config.ffprobe,
-                [
-                  "-v",
-                  "error",
-                  "-protocol_whitelist",
-                  "file,pipe",
-                  "-show_entries",
-                  "stream=width,height,codec_name",
-                  "-of",
-                  "json",
-                  path,
-                ],
-                signal,
-                undefined,
-                65536,
-              ),
-            ),
-          );
-          const stream = info.streams?.[0];
-          if (
-            !stream?.width || !stream.height ||
-            stream.width * stream.height > 16_000_000
-          ) throw new Error("媒体尺寸无效或超过1600万像素");
-          pam = await command(this.config.ffmpeg, [
-            "-v",
-            "error",
-            "-threads",
-            "1",
-            "-protocol_whitelist",
-            "file,pipe",
-            ...(source.format === "webm" && stream.codec_name === "vp9"
-              ? ["-c:v", "libvpx-vp9"]
-              : []),
-            "-i",
-            path,
-            "-frames:v",
-            "1",
-            "-threads",
-            "1",
-            "-pix_fmt",
-            "rgba",
-            "-c:v",
-            "pam",
-            "-f",
-            "image2pipe",
-            "pipe:1",
-          ], signal);
-        }
-        return await pdqRgb(pamRgb(pam), signal);
-      } finally {
-        await Deno.remove(temp, { recursive: true });
+      if (source.format === "tgs") {
+        const json = await bounded(
+          new Blob([bytes.slice().buffer]).stream().pipeThrough(
+            new DecompressionStream("gzip"),
+          ),
+          4_194_304,
+        );
+        return await pdqRgb({ json }, signal);
       }
+      if (
+        source.document &&
+        !(bytes[0] === 0xff && bytes[1] === 0xd8 ||
+          bytes[0] === 0x89 && bytes[1] === 0x50 ||
+          new TextDecoder().decode(bytes.subarray(0, 4)) === "RIFF" &&
+            new TextDecoder().decode(bytes.subarray(8, 12)) === "WEBP")
+      ) throw new Error("图片文件格式不支持");
+      return await pdqRgb(
+        { media: bytes, webm: source.format === "webm" },
+        signal,
+      );
     });
     this.store.cache(source.unique, result);
     return result;

@@ -1,0 +1,58 @@
+{
+  "image.png": {
+    "hash": "4dc4d25e1f52e4c81923d8ff64d69aff444edd2a34e2bd885b664f485292af04",
+    "quality": 100
+  },
+  "image.jpg": {
+    "hash": "4dd4d25e1e52e4c80963f8ff64469adf444edd2a34e2bd885b665f485292bf04",
+    "quality": 100
+  },
+  "image.webp": {
+    "hash": "4dc4d25e1f52e4c81923d8ff64d69aff444edd2a34e2bd885b664f485292af04",
+    "quality": 100
+  },
+  "first-frame.webm": {
+    "hash": "4dc4d25e1f52e4c81923d8ff64d69aff444edd2a34e2bd885b664f485292af04",
+    "quality": 100
+  },
+  "alpha.png": {
+    "hash": "4d949246531326c85933cecc74139a5c5119d52ab5bbe5ae1b3b6e4a9b93b335",
+    "quality": 100
+  },
+  "alpha.webm": {
+    "hash": "4996926e531326cc1933cecc7493925c5119d52ab5bbe5ae193b4e4a9b93b335",
+    "quality": 100
+  },
+  "first-frame.tgs": {
+    "hash": "1133664411336664193b311b191b66646e4c1133193b193b000046ecb11346e4",
+    "quality": 49
+  },
+  "orientation-2": {
+    "hash": "307c88e603f98783077b95a07c7ef5a84f6f82d723b398df663f881f00c78251",
+    "quality": 100
+  },
+  "orientation-3": {
+    "hash": "b4e7cce28ef74e4661f742514f3f40551fd33d00417f0f00443f7de00c477f0e",
+    "quality": 100
+  },
+  "orientation-4": {
+    "hash": "abae67b72f6b076526b225a14daa4f00452a2a55366a2275496ed2b7db12dc5b",
+    "quality": 100
+  },
+  "orientation-5": {
+    "hash": "5551d6ce1631657fad5db2f5610f885d9532ffac0c68e50255d4c7896fea0d00",
+    "quality": 100
+  },
+  "orientation-6": {
+    "hash": "8007438fec700027a34b7fa1f976f78ace043079febc4857a2a9d05ceaaf7455",
+    "quality": 100
+  },
+  "orientation-7": {
+    "hash": "e0005f2d884580c572d7f2df36910af5e884fda6ea2c2fa80229bb2bfaabafaa",
+    "quality": 100
+  },
+  "orientation-8": {
+    "hash": "555503888328871042941f8838e93da07572ead3efa8aa7dab9cc2de5afe38ff",
+    "quality": 100
+  }
+}

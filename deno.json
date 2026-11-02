@@ -5,11 +5,11 @@
     "@grammyjs/runner": "npm:@grammyjs/runner@2.0.3"
   },
   "tasks": {
-    "dev": "deno run --watch --env-file=.env --allow-env --allow-net --allow-read --allow-write --allow-run=/usr/bin/ffmpeg,/usr/bin/ffprobe src/main.ts",
-    "start": "deno run --env-file=.env --allow-env --allow-net --allow-read --allow-write --allow-run=/usr/bin/ffmpeg,/usr/bin/ffprobe src/main.ts",
+    "dev": "deno run --watch --env-file=.env --allow-env --allow-net --allow-read --allow-write --deny-run src/main.ts",
+    "start": "deno run --env-file=.env --allow-env --allow-net --allow-read --allow-write --deny-run src/main.ts",
     "check": "deno fmt --check && deno lint && deno check src/*.ts tests/*.ts",
-    "test": "deno test --allow-env --allow-read --allow-write --allow-run=/usr/bin/ffmpeg,/usr/bin/ffprobe tests/",
-    "compile": "deno compile --allow-env --allow-net --allow-read --allow-write --allow-run=/usr/bin/ffmpeg,/usr/bin/ffprobe --include assets --include src/pdq_worker.ts --include web/index.html --output dist/diobot src/main.ts",
+    "test": "deno test --allow-env --allow-read --allow-write --deny-run tests/",
+    "compile": "deno compile --allow-env --allow-net --allow-read --allow-write --deny-run --include assets --include src/pdq_worker.ts --include web/index.html --output dist/diobot src/main.ts",
     "check:tools": "deno check --config tools/deno.json tools/*.ts",
     "test:telegram": "deno run --no-prompt --config tools/deno.json --env-file=.env.telegram --allow-env --allow-sys --allow-net --allow-read --allow-write tools/integration_test.ts",
     "test:serve": "deno run --allow-read --allow-run=./dist/diobot tools/serve_test.ts",

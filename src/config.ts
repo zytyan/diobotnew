@@ -1,6 +1,4 @@
 export interface Config {
-  ffmpeg: string;
-  ffprobe: string;
   token: string;
   environment: "prod" | "test";
   apiRoot: string;
@@ -96,8 +94,6 @@ export function loadConfig(env = Deno.env.toObject()): Config {
     }
   }
   return {
-    ffmpeg: "/usr/bin/ffmpeg",
-    ffprobe: "/usr/bin/ffprobe",
     token: env.BOT_TOKEN,
     environment,
     apiRoot: env.API_ROOT ?? "https://api.telegram.org",

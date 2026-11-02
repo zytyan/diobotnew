@@ -70,12 +70,12 @@ export async function mediaSelfTest() {
       aliases: ["selftest"],
     });
     if (decoded.hash !== expected) {
-      throw new Error("FFmpeg frame decode self-test failed");
+      throw new Error("Embedded media decoder self-test failed");
     }
   } finally {
     store.close();
   }
   console.log(
-    "媒体自检通过：PDQ WASM、TGS/rlottie WASM、FFmpeg/FFprobe、嵌入资源及Worker。",
+    "媒体自检通过：PDQ WASM、TGS/rlottie WASM、图片/WebM解码 WASM、嵌入资源及Worker。",
   );
 }

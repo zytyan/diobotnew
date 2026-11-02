@@ -1,3 +1,4 @@
+import { orientRgb, rgbaRgb } from "../src/media_pixels.ts";
 import { createBot } from "../src/bot.ts";
 import { loadConfig } from "../src/config.ts";
 import {
@@ -5,7 +6,6 @@ import {
   MediaService,
   type MediaSource,
   mediaSource,
-  pamRgb,
   pdqRgb,
 } from "../src/media.ts";
 import {
@@ -203,13 +203,9 @@ Deno.test("PDQ WASM与官方C++ RGB参考实现完全一致；透明像素统一
         "aaa2a8e822aa8adfaa22a8ffaa2a8add2a226faa5aaa7688d52a774a5dd27536" &&
       result.quality === 100,
   );
-  const header = new TextEncoder().encode(
-    "P7\nWIDTH 1\nHEIGHT 1\nDEPTH 4\nMAXVAL 255\nENDHDR\n",
+  assert(
+    rgbaRgb(new Uint8Array([20, 30, 40, 0]), 1, 1).rgb.every((v) => v === 255),
   );
-  const pam = new Uint8Array(header.length + 4);
-  pam.set(header);
-  pam.set([20, 30, 40, 0], header.length);
-  assert(pamRgb(pam).rgb.every((v) => v === 255));
   let failed = false;
   try {
     await pdqRgb(
@@ -242,6 +238,11 @@ Deno.test("真实解码：PNG/JPEG/WebP/WebM首帧及TGS WASM渲染，缓存复�
     },
   );
   try {
+    const baseline = JSON.parse(
+      await Deno.readTextFile(
+        new URL("./fixtures/media/native-baseline.json", import.meta.url),
+      ),
+    );
     const results = [];
     for (
       const file of [
@@ -269,6 +270,11 @@ Deno.test("真实解码：PNG/JPEG/WebP/WebM首帧及TGS WASM渲染，缓存复�
       const result = await service.hash(input);
       results.push(result);
       assert(/^[a-f0-9]{64}$/.test(result.hash));
+      assert(
+        result.hash === baseline[file].hash &&
+          result.quality === baseline[file].quality,
+        `WASM must preserve stored PDQ semantics: ${file}`,
+      );
       assert((await service.hash(input)).hash === result.hash);
     }
     assert(downloads === 5);
@@ -304,6 +310,13 @@ Deno.test("真实解码：PNG/JPEG/WebP/WebM首帧及TGS WASM渲染，缓存复�
           unique: file,
           aliases: [file],
         }),
+      );
+    }
+    for (let i = 0; i < 2; i++) {
+      const file = i ? "alpha.webm" : "alpha.png";
+      assert(
+        alphaHashes[i].hash === baseline[file].hash,
+        `WASM alpha PDQ must match native: ${file}`,
       );
     }
     assert(
@@ -538,4 +551,91 @@ Deno.test("媒体处理期间升管理员或设置变化不处罚，hash失败�
       store.close();
     }
   }
+});
+
+Deno.test("内嵌解码器保留JPEG全部EXIF方向，与迁移前原生PDQ完全一致", async () => {
+  const original = await Deno.readFile(
+    new URL("./fixtures/media/image.jpg", import.meta.url),
+  );
+  const baseline = JSON.parse(
+    await Deno.readTextFile(
+      new URL("./fixtures/media/native-baseline.json", import.meta.url),
+    ),
+  );
+  for (let orientation = 2; orientation <= 8; orientation++) {
+    const tiff = new Uint8Array(26);
+    tiff.set([
+      0x49,
+      0x49,
+      42,
+      0,
+      8,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0x12,
+      1,
+      3,
+      0,
+      1,
+      0,
+      0,
+      0,
+      orientation,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+    ]);
+    const exif = new Uint8Array(36);
+    exif.set([0xff, 0xe1, 0, 34, 69, 120, 105, 102, 0, 0]);
+    exif.set(tiff, 10);
+    const image = new Uint8Array(original.length + exif.length);
+    image.set(original.subarray(0, 2));
+    image.set(exif, 2);
+    image.set(original.subarray(2), exif.length + 2);
+    const result = await pdqRgb(
+      { media: image, webm: false },
+      AbortSignal.timeout(10000),
+    );
+    assert(
+      result.hash === baseline[`orientation-${orientation}`].hash &&
+        result.quality === baseline[`orientation-${orientation}`].quality,
+      `EXIF ${orientation}`,
+    );
+  }
+});
+
+Deno.test("EXIF转置保持非正方形图片的尺寸和像素位置", () => {
+  const rgb = new Uint8Array([
+    1,
+    1,
+    1,
+    2,
+    2,
+    2,
+    3,
+    3,
+    3,
+    4,
+    4,
+    4,
+    5,
+    5,
+    5,
+    6,
+    6,
+    6,
+  ]);
+  const result = orientRgb({ rgb, width: 2, height: 3 }, 6);
+  assert(result.width === 3 && result.height === 2);
+  assert(
+    [...result.rgb].filter((_, index) => index % 3 === 0).join() ===
+      "5,3,1,6,4,2",
+  );
 });
