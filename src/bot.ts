@@ -1,3 +1,5 @@
+import { MediaService, mediaSource } from "./media.ts";
+import { createMediaAdmin } from "./media_admin.ts";
 import { messageEvidence } from "./message_evidence.ts";
 import { messageContent } from "./message_content.ts";
 import { matchRules } from "./rules.ts";
@@ -17,7 +19,7 @@ const fullName = (user: User) =>
 export function createBot(
   config: Config,
   store: Store,
-  dependencies: { request?: typeof fetch } = {},
+  dependencies: { request?: typeof fetch; media?: MediaService } = {},
 ) {
   const bot = new Bot(config.token, {
     client: {
@@ -45,7 +47,10 @@ export function createBot(
   const request = dependencies.request ?? fetch;
   const profiles = new Profiles(bot.api, config, request);
   const admin = createAdmin(bot, config, store);
-  createCheck(bot, config, store, profiles, request, admin);
+  const media = dependencies.media ??
+    new MediaService(store.media, bot.api, config, request);
+  createMediaAdmin(bot, store, media, admin);
+  createCheck(bot, config, store, profiles, request, admin, media);
   bot.command("start", async (ctx) => {
     if (ctx.chat.type !== "private") return;
     await ctx.reply("我是群管理 bot。入群验证请使用申请入群后收到的专属链接。");
@@ -206,7 +211,8 @@ export function createBot(
     let recording = settings.review !== false && config.reviewDays > 0;
     if (
       settings.moderation === "off" && !recording &&
-      !settings.rules?.some((rule) => rule.enabled)
+      !settings.rules?.some((rule) => rule.enabled) &&
+      !settings.media?.image.enabled && !settings.media?.sticker.enabled
     ) return;
     const snapshotId = store.captureMessage(
       ctx.chat.id,
@@ -217,6 +223,80 @@ export function createBot(
     );
     if (!kind) return;
     const text = content.text;
+    const source = mediaSource(msg);
+    if (source && settings.media?.[source.kind].enabled) {
+      try {
+        const match = await media.match(ctx.chat.id, source, settings.media);
+        if (match) {
+          const protectedNow = await moderationEligibility(
+            bot.api,
+            msg,
+            bot.botInfo.id,
+            config.owners,
+          );
+          if (!protectedNow.allowed) {
+            if (protectedNow.protectedUser) {
+              store.forgetReviewSender(ctx.chat.id, protectedNow.protectedUser);
+            }
+            return;
+          }
+          if (admin.settings(ctx.chat.id).revision !== settings.revision) {
+            store.snapshotResult(snapshotId, "settings_changed");
+            return;
+          }
+          let action = "media_observed";
+          if (match.action !== "observe") {
+            try {
+              await ctx.deleteMessage();
+              action = "media_deleted";
+            } catch {
+              action = "media_delete_failed";
+            }
+            if (match.action === "ban" || match.action === "mute") {
+              const deleted = action === "media_deleted";
+              try {
+                if (match.action === "ban") {
+                  await bot.api.banChatMember(ctx.chat.id, msg.from.id, {
+                    until_date: 0,
+                  });
+                } else {
+                  await bot.api.restrictChatMember(
+                    ctx.chat.id,
+                    msg.from.id,
+                    {},
+                    { use_independent_chat_permissions: true, until_date: 0 },
+                  );
+                }
+                action = `media_${match.action === "ban" ? "banned" : "muted"}${
+                  deleted ? "" : "_delete_failed"
+                }`;
+              } catch {
+                action = `media_${
+                  deleted ? "deleted_" : "delete_failed_"
+                }${match.action}_failed`;
+              }
+            }
+          }
+          store.snapshotResult(snapshotId, action, match);
+          store.groupEvent(ctx.chat.id, {
+            event: "moderation",
+            snapshot_id: snapshotId,
+            message_id: msg.message_id,
+            sender_id: msg.from.id,
+            action,
+            result: match,
+          });
+          return;
+        }
+      } catch {
+        store.groupEvent(ctx.chat.id, {
+          event: "media_error",
+          message_id: msg.message_id,
+          action: "fallback",
+          reason: "媒体下载、首帧解码或PDQ计算失败；继续现有审核",
+        });
+      }
+    }
     const hasRules = settings.rules?.some((rule) => rule.enabled);
     let context = await profiles.get(
       msg.from,

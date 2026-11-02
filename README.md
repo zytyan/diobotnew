@@ -232,6 +232,54 @@ file_id，不自动下载全部媒体二进制。管理员可点击“AI重新�
 AI，绕过旧判断缓存但共享每日额度；不执行封禁、禁言或删除，原判断保留，新结果另记日志。Telegram
 当次未提供的跨频道原文、或以前未留存的字段不能补回。
 
+## 图片与 Sticker 黑名单
+
+各群独立维护图片、Sticker
+名单，两类分别启用并配置动作：观察、删除、删消息并禁言、删消息并永久封禁。默认均关闭，启用时默认删除消息；与
+AI
+开关独立。管理员、OWNER_IDS、匿名及关联频道保护继续生效；媒体黑名单优先于正则白名单，命中后不调用
+AI。
+
+管理员回复图片、图片文件或 Sticker，使用原生 ephemeral `/blacklist`，选择加入
+unique ID、PDQ Hash，Sticker
+有所属组时还可加入整个组。添加不会处理被回复消息或扫描历史，只影响后续消息和编辑。按钮绑定操作者、本群、媒体，六分钟有效；重复添加不产生重复条目。图片
+ID 会保存 Telegram 提供的各尺寸 unique ID 别名。组名匹配覆盖该组之后新增的
+Sticker。
+
+在 `/settings` 的图片、Sticker 黑名单卡片中启用功能、选择动作、调整 PDQ
+参数，以及加载名单、修改备注、删除条目。数值和备注在输入框失焦后保存；客户端与服务端使用相同的策略校验。设置和名单共享群
+revision，旧页面提交会提示重新加载。每群每类最多1000条，SQLite 持久保存。
+
+图片支持 Telegram photo 及 JPEG、PNG、WebP 图片文件，不包含普通视频和
+GIF。静态图片与 WebM 使用 FFmpeg 解码，WebM 只取第一帧；TGS 使用嵌入的 rlottie
+WASM 渲染第一帧，透明区域统一白底，再由 PDQ WASM 计算256位 hash 和0–100
+Quality。两种 WASM 均在有截止时间的 Worker 中执行，不下载运行时代码，也不使用
+Telegram 缩略图代替原媒体。
+
+PDQ 最大汉明距离默认31（可设0–256），最低 Quality
+默认50（可设0–100）。当前媒体和名单条目的 Quality
+都必须达标，距离不大于阈值才算匹配。低 Quality
+条目可保存，页面和添加回执会提示其在当前门槛下不参与匹配；ID 和组名匹配不受
+Quality 限制。名单按图片和 Sticker 分开匹配。
+
+下载限制20 MiB，解码上限1600万像素，TGS解压上限4
+MiB；单项处理限时10秒，全局最多同时处理两项。下载、解码或 hash
+失败保留消息、记日志并继续原正则和 AI 流程。计算缓存按 unique ID
+和处理版本复用，最多10000项；临时媒体处理完即删除。`/check`
+显示媒体黑名单的实际历史结果或当前匹配依据，包括距离及双方 Quality，但不会处罚。
+
+`GET /api/media-blacklist` 获取本群名单与策略；`POST` 添加条目，或使用
+`operation: "note"` 修改备注；`DELETE` 按条目 ID 删除。写请求均携带当前群
+revision；添加 PDQ 需64位十六进制 hash 和 Quality。认证和权限与 `/api/settings`
+一致，不接受未签名的目标群。旧客户端不传 `media` 时保留已有媒体设置。
+
+构建使用固定上游版本，详情见 [native/README.md](native/README.md)。运行时需要
+`/usr/bin/ffmpeg` 和
+`/usr/bin/ffprobe`，编译任务已限定允许执行这两个程序。发布前执行
+`./dist/diobot --check-media`，离线验证嵌入的 PDQ、rlottie、Worker
+和解码链，不连接
+Telegram、不修改运行数据库。部署可保留默认关闭，再由各群管理员分别启用。
+
 ## 检查与二进制
 
 ```sh

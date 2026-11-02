@@ -1,3 +1,4 @@
+import { validateMediaPolicies } from "../src/media_store.ts";
 import { createHandler } from "../src/server.ts";
 import { loadConfig } from "../src/config.ts";
 import { Store } from "../src/store.ts";
@@ -12,6 +13,9 @@ const html = Deno.readTextFileSync(
 const script = html.match(/<script>\s*([\s\S]*?)<\/script>/)![1].replace(
   "/*__RULE_VALIDATOR__*/ null",
   () => validateRules.toString(),
+).replace(
+  "/*__MEDIA_VALIDATOR__*/ null",
+  () => validateMediaPolicies.toString(),
 );
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 class FakeElement {
@@ -39,6 +43,7 @@ class FakeElement {
   ) => {};
   oninput = () => {};
   onblur = () => {};
+  onfocus = () => {};
   onsubmit = (_event: { preventDefault(): void }) => {};
   append(...nodes: FakeElement[]) {
     this.children.push(...nodes);
@@ -81,9 +86,20 @@ function page(
     headers: Record<string, string>;
   }[] = [];
   const state = {
+    mediaEntries: [{
+      id: 1,
+      kind: "image",
+      type: "unique",
+      value: "unique",
+      quality: null,
+      note: "",
+      actor: 42,
+      created: 1,
+    }],
     offline: false,
     conflict: false,
     hold: false,
+    holdMediaGet: false,
     reportFails: false,
     logsDenied: false,
     release: () => {},
@@ -113,6 +129,7 @@ function page(
     URL,
     URLSearchParams,
     AbortController,
+    AbortSignal,
     setTimeout,
     clearTimeout,
     crypto,
@@ -130,6 +147,36 @@ function page(
             status: state.reportFails ? 503 : 202,
           }),
         );
+      }
+      if (url === "/api/media-blacklist") {
+        if (options.method !== "GET") {
+          const body = JSON.parse(options.body!);
+          assert(body.revision === settings.revision);
+          if (options.method === "DELETE") {
+            state.mediaEntries = state.mediaEntries.filter((entry) =>
+              entry.id !== body.id
+            );
+          } else {state.mediaEntries.find((entry) => entry.id === body.id)!
+              .note = body.note;}
+          settings.revision++;
+        }
+        const result = Response.json({
+          revision: settings.revision,
+          entries: state.mediaEntries,
+        });
+        if (
+          (state.hold && options.method !== "GET") ||
+          (state.holdMediaGet && options.method === "GET")
+        ) {
+          return new Promise<Response>((resolve) => {
+            state.release = () => {
+              state.hold = false;
+              state.holdMediaGet = false;
+              resolve(result);
+            };
+          });
+        }
+        return Promise.resolve(result);
       }
       if (url === "/api/logs") {
         return Promise.resolve(Response.json(
@@ -575,4 +622,112 @@ Deno.test("实际页面注入服务端校验函数，客户端执行相同规则
   } finally {
     store.close();
   }
+});
+
+Deno.test("图片和sticker策略独立、默认关闭，PDQ数值仅失焦保存，非法Quality本地拦截", async () => {
+  const t = page();
+  t.start();
+  await tick();
+  assert(
+    !t.elements.get("media-image-enabled")!.checked &&
+      !t.elements.get("media-sticker-enabled")!.checked,
+  );
+  const distance = t.elements.get("media-image-distance")!;
+  distance.value = "12";
+  distance.oninput();
+  await tick();
+  assert(t.saves().length === 0);
+  distance.onblur();
+  await tick();
+  const policies = JSON.parse(t.saves()[0].body!).media;
+  assert(policies.image.distance === 12 && policies.sticker.distance === 31);
+  const quality = t.elements.get("media-sticker-quality")!;
+  quality.value = "101";
+  quality.oninput();
+  quality.onblur();
+  await tick();
+  assert(
+    t.saves().length === 1 &&
+      t.elements.get("error-text")!.textContent.includes("Quality"),
+  );
+  quality.value = "50";
+  quality.oninput();
+  quality.onblur();
+  await tick();
+  assert(t.saves().length === 2);
+});
+Deno.test("网页名单加载、备注失焦和删除串行递增版本；旧响应不重绘正在编辑的备注", async () => {
+  const t = page();
+  t.state.mediaEntries.push({
+    ...t.state.mediaEntries[0],
+    id: 2,
+    value: "second",
+  });
+  t.start();
+  await tick();
+  t.elements.get("media-image-refresh")!.onclick();
+  await tick();
+  const list = t.elements.get("media-image-entries")!;
+  assert(list.children.length === 2);
+  const firstNote = list.children[0].children[1].children[0];
+  firstNote.value = "first note";
+  firstNote.oninput();
+  await tick();
+  const mutations = () =>
+    t.calls.filter((c) =>
+      c.url === "/api/media-blacklist" && c.method !== "GET"
+    );
+  assert(mutations().length === 0);
+  t.state.hold = true;
+  firstNote.onblur();
+  await tick();
+  const secondNote = list.children[1].children[1].children[0];
+  secondNote.value = "still editing";
+  secondNote.oninput();
+  t.state.release();
+  await tick();
+  assert(
+    list.children[1].children[1].children[0] === secondNote &&
+      mutations().length === 1,
+  );
+  secondNote.onblur();
+  await tick();
+  assert(
+    mutations().length === 2 && JSON.parse(mutations()[1].body!).revision === 1,
+  );
+  list.children[0].children[2].onclick();
+  await tick();
+  assert(
+    mutations().length === 3 && Number(list.children.length) === 1 &&
+      t.settings.revision === 3,
+  );
+});
+
+Deno.test("刷新名单期间失焦的备注排队保存，不丢失提交请求", async () => {
+  const t = page();
+  t.start();
+  await tick();
+  t.elements.get("media-image-refresh")!.onclick();
+  await tick();
+  const note =
+    t.elements.get("media-image-entries")!.children[0].children[1].children[0];
+  t.state.holdMediaGet = true;
+  t.elements.get("media-image-refresh")!.onclick();
+  await tick();
+  note.value = "queued";
+  note.oninput();
+  note.onblur();
+  assert(
+    !t.calls.some((c) =>
+      c.url === "/api/media-blacklist" && c.method === "POST"
+    ),
+  );
+  t.state.release();
+  await tick();
+  assert(
+    t.calls.some((c) =>
+      c.url === "/api/media-blacklist" && c.method === "POST"
+    ),
+  );
+  assert(t.state.mediaEntries[0].note === "queued");
 });

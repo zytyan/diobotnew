@@ -1,3 +1,4 @@
+import { mediaSelfTest } from "./media_selftest.ts";
 import { run } from "@grammyjs/runner";
 import { createBot } from "./bot.ts";
 import { loadConfig } from "./config.ts";
@@ -9,8 +10,10 @@ if (Deno.args.includes("--version")) {
   console.log(`diobot ${version}`);
 } else if (Deno.args.includes("--help")) {
   console.log(
-    "diobot [--help | --version | --check]\n配置使用环境变量，参见 .env.example；--check 仅检查配置，不连接 Telegram。",
+    "diobot [--help | --version | --check | --check-media]\n配置使用环境变量，参见 .env.example；--check 仅检查配置，不连接 Telegram。",
   );
+} else if (Deno.args.includes("--check-media")) {
+  await mediaSelfTest();
 } else {
   const config = loadConfig();
   if (Deno.args.includes("--check")) {
@@ -44,6 +47,11 @@ if (Deno.args.includes("--version")) {
       {
         command: "review",
         description: "复核近期样本与标记误判",
+        is_ephemeral: true,
+      },
+      {
+        command: "blacklist",
+        description: "回复图片或sticker，加入本群媒体黑名单",
         is_ephemeral: true,
       },
       {

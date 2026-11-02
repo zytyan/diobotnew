@@ -1,3 +1,4 @@
+import { type MediaService, mediaSource } from "./media.ts";
 import { messageEvidence } from "./message_evidence.ts";
 import type { Message } from "grammy/types";
 import { messageContent } from "./message_content.ts";
@@ -32,6 +33,7 @@ export function createCheck(
     panel: (ctx: Context, rich: InputRichMessage) => Promise<void>;
     isAdmin: (chat: number, user: number) => Promise<boolean>;
   },
+  media?: MediaService,
 ) {
   bot.command("check", async (ctx) => {
     if (!["group", "supergroup"].includes(ctx.chat.type) || !ctx.from) return;
@@ -78,6 +80,16 @@ export function createCheck(
         const result = savedRaw.result_json
           ? JSON.parse(savedRaw.result_json)
           : undefined;
+        if (result?.model === "local-media") {
+          await reply(
+            `已记录的媒体黑名单匹配：${result.reason}\n类型：${result.type}；值：${result.value}\n${
+              result.distance === undefined
+                ? "精确匹配"
+                : `汉明距离：${result.distance}；Quality：当前 ${result.quality} / 名单 ${result.entry_quality}`
+            }\n处理结果：${savedRaw.action}\n未调用 AI。本次仅检查，未执行处罚。`,
+          );
+          return;
+        }
         if (result?.model === "local-regex" && result.rule_id) {
           const actions: Record<string, string> = {
             rule_allowed: "保留消息（直接放行）",
@@ -94,6 +106,31 @@ export function createCheck(
             return;
           }
         }
+      }
+    }
+    const source = mediaSource(target);
+    if (source && media) {
+      try {
+        const match = await media.match(
+          ctx.chat.id,
+          source,
+          store.media.policies(ctx.chat.id),
+        );
+        if (match) {
+          await reply(
+            `命中媒体黑名单：${match.reason}\n类型：${match.type}；值：${match.value}\n${
+              match.distance === undefined
+                ? "精确匹配"
+                : `汉明距离：${match.distance}；Quality：当前 ${match.quality} / 名单 ${match.entry_quality}`
+            }\n配置动作：${match.action}。未调用 AI。本次仅检查，未执行处罚。`,
+          );
+          return;
+        }
+      } catch {
+        await reply(
+          "媒体下载、首帧解码或PDQ计算失败。本次仅检查，未执行处罚，请重试。",
+        );
+        return;
       }
     }
     const content = messageContent(target);

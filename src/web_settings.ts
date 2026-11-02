@@ -1,3 +1,4 @@
+import { validateMediaPolicies } from "./media_store.ts";
 import { reanalyze } from "./reanalyze.ts";
 import { validateRules } from "./rules.ts";
 import type { Api } from "grammy";
@@ -50,13 +51,17 @@ export function settingsHandler(
   config: Config,
   store: Store,
   dependencies: SettingsDependencies,
-  mode: "settings" | "logs" | "raw" | "reanalyze" = "settings",
+  mode: "settings" | "logs" | "raw" | "reanalyze" | "media" = "settings",
 ) {
   return async (request: Request): Promise<Response> => {
     if (
-      !(mode === "reanalyze" ? ["POST"] : ["GET", "PUT"]).includes(
-        request.method,
-      )
+      !(mode === "reanalyze"
+        ? ["POST"]
+        : mode === "media"
+        ? ["GET", "POST", "DELETE"]
+        : ["GET", "PUT"]).includes(
+          request.method,
+        )
     ) {
       return json(405, { error: "不支持的请求方式" });
     }
@@ -68,7 +73,10 @@ export function settingsHandler(
       }
       const auth = await telegramIdentity(header.slice(9), config.token);
       const context = /^(settings|logs)_(-[1-9]\d*)$/.exec(auth.start);
-      if (!context || (mode === "settings" && context[1] !== "settings")) {
+      if (
+        !context ||
+        (["settings", "media"].includes(mode) && context[1] !== "settings")
+      ) {
         throw new Error();
       }
       user = auth.user;
@@ -99,6 +107,81 @@ export function settingsHandler(
       ) {
         return json(403, {
           error: "仅本群管理员可管理，且机器人必须是本群管理员",
+        });
+      }
+      if (mode === "media") {
+        const settings = groupSettings(config, store, chat);
+        if (request.method !== "GET") {
+          try {
+            const body = await readBody(request) as Record<string, unknown>;
+            if (
+              !body || !Number.isSafeInteger(body.revision) ||
+              Number(body.revision) < 0
+            ) return json(400, { error: "缺少有效设置版本号" });
+            if (body.revision !== settings.revision) {
+              return json(409, { error: "设置已被其他管理员修改，请重新加载" });
+            }
+            if (request.method === "DELETE") {
+              if (!Number.isSafeInteger(body.id) || Number(body.id) < 1) {
+                return json(400, { error: "黑名单ID无效" });
+              }
+              store.media.remove(chat, Number(body.id), Number(body.revision));
+            } else if (body.operation === "note") {
+              if (
+                !Number.isSafeInteger(body.id) || Number(body.id) < 1 ||
+                typeof body.note !== "string" || body.note.length > 200
+              ) return json(400, { error: "条目ID或备注无效，备注最多200字" });
+              store.db.exec("BEGIN IMMEDIATE");
+              try {
+                const changed = store.db.prepare(
+                  "UPDATE media_blacklist SET note=? WHERE chat_id=? AND id=?",
+                ).run(body.note, chat, Number(body.id)).changes;
+                if (changed) {
+                  const bumped = store.db.prepare(
+                    "UPDATE group_settings SET revision=revision+1 WHERE chat_id=? AND revision=?",
+                  ).run(chat, Number(body.revision)).changes;
+                  if (!bumped) throw new Error("conflict");
+                }
+                store.db.exec("COMMIT");
+              } catch (error) {
+                store.db.exec("ROLLBACK");
+                throw error;
+              }
+            } else {
+              store.media.add(
+                chat,
+                user,
+                body as unknown as Parameters<typeof store.media.add>[2],
+                Number(body.revision),
+              );
+            }
+            store.groupEvent(chat, {
+              event: "media_blacklist_changed",
+              actor_id: user,
+              operation: request.method === "DELETE"
+                ? "delete"
+                : body.operation === "note"
+                ? "note"
+                : "add",
+              entry_id: body.id,
+            });
+          } catch (error) {
+            return json(
+              error instanceof Error && error.message === "conflict"
+                ? 409
+                : 400,
+              {
+                error: error instanceof Error
+                  ? error.message
+                  : "黑名单参数无效",
+              },
+            );
+          }
+        }
+        return json(200, {
+          revision: groupSettings(config, store, chat).revision,
+          entries: store.media.entries(chat),
+          policies: store.media.policies(chat),
         });
       }
       if (mode === "reanalyze") {
@@ -169,6 +252,7 @@ export function settingsHandler(
           const allowed = [
             ...booleanKeys,
             "rules",
+            "media",
             "uploadAvatar",
             "moderation",
             "aiThreshold",
@@ -192,6 +276,9 @@ export function settingsHandler(
             value.aiThreshold > 1 ||
             !Number.isSafeInteger(value.revision) || Number(value.revision) < 0
           ) throw new Error("参数无效：阈值须为50%至100%，开关须为布尔值");
+          if (value.media !== undefined) {
+            value.media = validateMediaPolicies(value.media);
+          }
           if (value.rules !== undefined) {
             value.rules = validateRules(value.rules);
           }
@@ -226,6 +313,22 @@ export function settingsHandler(
             rule.enabled && rule.action === "ban"
           ) && !bot.can_restrict_members
         ) return json(403, { error: "黑名单封禁需要机器人限制成员权限" });
+        if (value.media !== undefined) {
+          const policies = validateMediaPolicies(value.media);
+          for (const policy of Object.values(policies)) {
+            if (!policy.enabled) continue;
+            if (policy.action !== "observe" && !bot.can_delete_messages) {
+              return json(403, { error: "媒体黑名单需要机器人删除消息权限" });
+            }
+            if (
+              ["ban", "mute"].includes(policy.action) &&
+              !bot.can_restrict_members
+            ) return json(403, { error: "媒体处罚需要机器人限制成员权限" });
+            if (policy.action === "mute" && info.type !== "supergroup") {
+              return json(403, { error: "媒体禁言需要超级群" });
+            }
+          }
+        }
         const changes = value.moderation !== current.moderation ||
           value.aiThreshold !== (current.aiThreshold ?? config.aiThreshold);
         if (

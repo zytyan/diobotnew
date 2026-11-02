@@ -306,6 +306,36 @@
             <div id="rules-list"></div><button id="add-rule" type="button">新增规则 / 规则组</button>
           </div>
           <div class="card">
+            <h2>图片黑名单</h2>
+            <label>启用图片黑名单<input id="media-image-enabled" type="checkbox"></label>
+            <label
+              class="stacked">命中动作<select id="media-image-action"><option value="observe">仅观察</option><option value="delete">删除消息</option><option value="mute">删消息并禁言</option><option value="ban">删消息并永久封禁</option></select></label>
+            <label
+              class="stacked">PDQ 最大汉明距离（0–256）<input id="media-image-distance" type="number" min="0" max="256" step="1" required></label>
+            <label
+              class="stacked">PDQ 最低 Quality（0–100）<input id="media-image-quality" type="number" min="0" max="100" step="1" required></label>
+            <p
+              class="hint">独立于 AI，优先于正则白名单。ID 和 sticker 组名精确匹配；PDQ 要求双方 Quality 达标且距离不超过门槛。默认关闭。回复媒体使用 /blacklist 添加，仅影响后续消息。</p>
+            <button id="media-image-refresh"
+              type="button">加载 / 刷新名单</button>
+            <div id="media-image-entries"></div>
+          </div>
+          <div class="card">
+            <h2>Sticker黑名单</h2>
+            <label>启用Sticker黑名单<input id="media-sticker-enabled" type="checkbox"></label>
+            <label
+              class="stacked">命中动作<select id="media-sticker-action"><option value="observe">仅观察</option><option value="delete">删除消息</option><option value="mute">删消息并禁言</option><option value="ban">删消息并永久封禁</option></select></label>
+            <label
+              class="stacked">PDQ 最大汉明距离（0–256）<input id="media-sticker-distance" type="number" min="0" max="256" step="1" required></label>
+            <label
+              class="stacked">PDQ 最低 Quality（0–100）<input id="media-sticker-quality" type="number" min="0" max="100" step="1" required></label>
+            <p
+              class="hint">独立于 AI，优先于正则白名单。ID 和 sticker 组名精确匹配；PDQ 要求双方 Quality 达标且距离不超过门槛。默认关闭。回复媒体使用 /blacklist 添加，仅影响后续消息。</p>
+            <button id="media-sticker-refresh"
+              type="button">加载 / 刷新名单</button>
+            <div id="media-sticker-entries"></div>
+          </div>
+          <div class="card">
             <h2>头像识别</h2>
             <label
               for="uploadAvatar">上传发送者头像参与审核<input id="uploadAvatar" type="checkbox"></label>
@@ -445,6 +475,20 @@
         settings_saved: "保存群设置",
         moderation: "消息审核",
         rules_error: "规则执行异常",
+        media_observed: "媒体黑名单命中（仅观察）",
+        media_deleted: "媒体黑名单：已删除消息",
+        media_delete_failed: "媒体黑名单：删除失败",
+        media_banned: "媒体黑名单：已删消息并封禁",
+        media_muted: "媒体黑名单：已删消息并禁言",
+        media_banned_delete_failed: "媒体黑名单：已封禁，删除失败",
+        media_muted_delete_failed: "媒体黑名单：已禁言，删除失败",
+        media_deleted_ban_failed: "媒体黑名单：已删除，封禁失败",
+        media_deleted_mute_failed: "媒体黑名单：已删除，禁言失败",
+        media_delete_failed_ban_failed: "媒体黑名单：删除和封禁失败",
+        media_delete_failed_mute_failed: "媒体黑名单：删除和禁言失败",
+        media_error: "媒体处理失败，继续现有审核",
+        media_blacklist_added: "添加媒体黑名单",
+        media_blacklist_changed: "修改媒体黑名单",
       };
       function renderLogs() {
         const container = el("log-entries");
@@ -837,6 +881,159 @@
       let saveRequested = false;
       const validateRules = /*__RULE_VALIDATOR__*/ null;
       let lastOperation = "GET";
+      const validateMediaPolicies = /*__MEDIA_VALIDATOR__*/ null;
+      let mediaPolicies;
+      let mediaEntries = [];
+      const mediaQueue = [];
+      const mediaEditing = new Set();
+      let mediaRenderPending = false;
+      function renderMediaEntries() {
+        if (mediaEditing.size) {
+          mediaRenderPending = true;
+          return;
+        }
+        mediaRenderPending = false;
+        for (const kind of ["image", "sticker"]) {
+          const container = el(`media-${kind}-entries`);
+          container.textContent = "";
+          const entries = mediaEntries.filter((entry) => entry.kind === kind);
+          if (!entries.length) {
+            container.textContent =
+              "暂无黑名单条目。回复媒体使用 /blacklist 添加。";
+          }
+          for (const entry of entries) {
+            const card = document.createElement("article");
+            card.className = "rule-card";
+            const details = document.createElement("p");
+            details.style.overflowWrap = "anywhere";
+            details.textContent = `#${entry.id} · ${entry.type}：${entry.value}\n${
+              entry.quality === null ? "精确匹配" : "Quality：" + entry.quality +
+                (entry.quality < mediaPolicies[kind].quality
+                  ? "（低于当前门槛，不参与匹配）"
+                  : "")
+            }\n添加人：${entry.actor} · ${
+              new Date(entry.created).toLocaleString()
+            }`;
+            const label = document.createElement("label");
+            label.textContent = "备注（失焦保存）";
+            const note = document.createElement("input");
+            note.type = "text";
+            note.maxLength = 200;
+            note.value = entry.note;
+            note.onfocus = () => mediaEditing.add(note);
+            note.oninput = () => {
+              mediaEditing.add(note);
+              notice("备注有修改，离开输入框后保存。");
+            };
+            note.onblur = () => {
+              mediaEditing.delete(note);
+              if (note.value === entry.note) {
+                if (mediaRenderPending) renderMediaEntries();
+                return;
+              }
+              if (note.value.length > 200) {
+                notice("备注最多200字", true, "PUT");
+                return;
+              }
+              queueMedia("POST", {
+                operation: "note",
+                id: entry.id,
+                note: note.value,
+              });
+            };
+            label.append(note);
+            const remove = document.createElement("button");
+            remove.type = "button";
+            remove.textContent = "删除条目";
+            remove.onclick = () => queueMedia("DELETE", { id: entry.id });
+            card.append(details, label, remove);
+            container.append(card);
+          }
+        }
+      }
+      async function mediaExchange(method, body) {
+        const response = await fetch("/api/media-blacklist", {
+          method,
+          cache: "no-store",
+          signal: AbortSignal.timeout(12000),
+          headers: {
+            Authorization: "Telegram " + initData,
+            ...(body ? { "Content-Type": "application/json" } : {}),
+          },
+          ...(body ? { body: JSON.stringify({ ...body, revision }) } : {}),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          const error = new Error(result.error || "名单操作失败");
+          error.status = response.status;
+          throw error;
+        }
+        return result;
+      }
+      function queueMedia(method, body) {
+        if (paused) {
+          notice("请先重新加载最新设置", true, "PUT");
+          return;
+        }
+        mediaQueue.push({ method, body });
+        void flushMedia();
+      }
+      async function flushMedia() {
+        if (busy || paused || !mediaQueue.length) return;
+        busy = true;
+        lastOperation = "PUT";
+        try {
+          while (mediaQueue.length) {
+            const op = mediaQueue[0];
+            const result = await mediaExchange(op.method, op.body);
+            revision = result.revision;
+            mediaEntries = result.entries;
+            mediaQueue.shift();
+          }
+          renderMediaEntries();
+          notice(
+            dirty
+              ? "名单已保存；其他输入完成后请离开输入框保存。"
+              : "名单已保存，立即生效。",
+          );
+        } catch (error) {
+          paused = [401, 403, 409].includes(error.status);
+          notice(error.message || "名单保存失败，请重试", true, "PUT");
+        } finally {
+          busy = false;
+          if (saveRequested && dirty) void save();
+        }
+      }
+      async function refreshMedia() {
+        if (busy || revision === undefined) return;
+        busy = true;
+        lastOperation = "MEDIA_GET";
+        try {
+          const result = await mediaExchange("GET");
+          if (result.revision !== revision) {
+            paused = true;
+            throw new Error("设置已被修改，请重新加载后继续编辑。");
+          }
+          mediaEntries = result.entries;
+          renderMediaEntries();
+        } catch (error) {
+          notice(error.message || "名单加载失败", true, "GET");
+        } finally {
+          busy = false;
+          if (saveRequested && dirty) void save();
+          else void flushMedia();
+        }
+      }
+      for (const kind of ["image", "sticker"]) {
+        el(`media-${kind}-refresh`).onclick = () => {
+          void refreshMedia();
+        };
+        for (const key of ["distance", "quality"]) {
+          const field = el(`media-${kind}-${key}`);
+          field.oninput = () => draftChanged();
+          field.onblur = () => changed();
+        }
+      }
       function notice(text, error = false, operation = lastOperation) {
         el("status").textContent = text;
         el("save-state").textContent = text;
@@ -1098,6 +1295,26 @@
       function fill(result) {
         revision = result.settings.revision;
         rules = JSON.parse(JSON.stringify(result.settings.rules || []));
+        mediaPolicies = result.settings.media ||
+          {
+            image: { enabled: false, action: "delete", distance: 31, quality: 50 },
+            sticker: {
+              enabled: false,
+              action: "delete",
+              distance: 31,
+              quality: 50,
+            },
+          };
+        for (const kind of ["image", "sticker"]) {
+          el(`media-${kind}-enabled`).checked = mediaPolicies[kind].enabled;
+          for (const key of ["action", "distance", "quality"]) {
+            el(`media-${kind}-${key}`).value = mediaPolicies[kind][key];
+          }
+        }
+        mediaQueue.length = 0;
+        mediaEntries = [];
+        mediaEditing.clear();
+        renderMediaEntries();
         renderRules();
         el("identity").textContent =
           `${result.chat.title}\n群 ID：${result.chat.id} · 用户 ID：${result.userId}`;
@@ -1118,8 +1335,24 @@
           threshold > 100
         ) throw new Error("处理阈值须为50%至100%，当前输入尚未保存。");
         const validRules = validateRules(rules);
+        const media = {};
+        for (const kind of ["image", "sticker"]) {
+          for (const key of ["distance", "quality"]) {
+            if (!String(el(`media-${kind}-${key}`).value).trim()) {
+              throw new Error("请填写PDQ距离和Quality");
+            }
+          }
+          media[kind] = {
+            enabled: el(`media-${kind}-enabled`).checked,
+            action: el(`media-${kind}-action`).value,
+            distance: Number(el(`media-${kind}-distance`).value),
+            quality: Number(el(`media-${kind}-quality`).value),
+          };
+        }
+        const validMedia = validateMediaPolicies(media);
         const body = {
           rules: validRules,
+          media: validMedia,
           revision,
           moderation: el("moderation").value,
           aiThreshold: threshold / 100,
@@ -1160,15 +1393,18 @@
             notice("正在保存…");
             const result = await exchange("PUT", body);
             revision = result.settings.revision;
+            mediaPolicies = result.settings.media || mediaPolicies;
             if (!dirty) notice("已保存，立即生效。");
           }
         } catch (error) {
           dirty = true;
+          saveRequested = false;
           paused = error.status === 409 || error.status === 401 ||
             error.status === 403;
           notice(error.message || "保存失败，修改尚未确认生效", true, "PUT");
         } finally {
           busy = false;
+          void flushMedia();
         }
       }
       function draftChanged() {
@@ -1200,7 +1436,9 @@
       };
       el("error-retry").onclick = () => {
         if (lastOperation === "GET") void load();
+        else if (lastOperation === "MEDIA_GET" && !paused) void refreshMedia();
         else if (paused) void load();
+        else if (mediaQueue.length) void flushMedia();
         else {
           changed();
         }

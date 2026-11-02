@@ -1,3 +1,4 @@
+import { type MediaPolicies, MediaStore } from "./media_store.ts";
 import type { RegexRule } from "./rules.ts";
 import { DatabaseSync } from "node:sqlite";
 import { dirname } from "node:path";
@@ -18,6 +19,7 @@ export interface Join {
 
 export class Store {
   readonly db: DatabaseSync;
+  readonly media: MediaStore;
   constructor(path: string) {
     if (path !== ":memory:") {
       Deno.mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
@@ -90,6 +92,7 @@ export class Store {
       CREATE INDEX IF NOT EXISTS review_sender ON review_messages(chat_id,sender_id);
       UPDATE joins SET state='done' WHERE state='speech' OR kind='speech';
     `);
+    this.media = new MediaStore(this.db);
   }
   recordChat(id: number, title: string, type: string, status?: string) {
     this.db.prepare(`INSERT INTO chats VALUES (?, ?, ?, ?, ?)
@@ -197,6 +200,7 @@ export class Store {
       aiThreshold: this.groupThreshold(chat),
       uploadAvatar: this.avatarEnabled(chat),
       rules: this.rules(chat),
+      media: this.media.policies(chat),
       review:
         this.db.prepare("SELECT enabled FROM review_settings WHERE chat_id=?")
           .get(chat)?.enabled !== 0,
@@ -410,6 +414,9 @@ export class Store {
           revision,
         ).changes > 0;
       if (changed) {
+        if (value.media !== undefined) {
+          this.media.savePolicies(chat, value.media);
+        }
         if (value.rules !== undefined) {
           this.db.prepare("INSERT OR REPLACE INTO group_rules VALUES(?,?)").run(
             chat,
@@ -725,6 +732,7 @@ export class Store {
 }
 
 export interface GroupSettings {
+  media?: MediaPolicies;
   rules?: RegexRule[];
   uploadAvatar?: boolean;
   aiThreshold?: number;

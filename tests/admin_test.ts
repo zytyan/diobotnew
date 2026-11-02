@@ -524,3 +524,62 @@ Deno.test("/check 直接返回已记录的正则放行或封禁结果，不读�
     }
   }
 });
+
+Deno.test("/blacklist 按钮绑定本群、操作者及有效期，管理员可用自己媒体添加且不追溯处罚", async () => {
+  const t = setup();
+  try {
+    await t.bot.init();
+    await t.bot.handleUpdate({
+      update_id: 800,
+      message: {
+        message_id: 0,
+        ephemeral_message_id: 9,
+        receiver_user: user(1),
+        chat,
+        from: user(1),
+        date: 1,
+        text: "/blacklist",
+        entities: [{ type: "bot_command", offset: 0, length: 10 }],
+        reply_to_message: {
+          message_id: 80,
+          chat,
+          from: user(1),
+          date: 1,
+          reply_to_message: undefined,
+          sticker: {
+            file_id: "file",
+            file_unique_id: "unique",
+            type: "regular",
+            width: 128,
+            height: 128,
+            is_animated: false,
+            is_video: false,
+            set_name: "Pack",
+          },
+        },
+      },
+    });
+    const panel = JSON.stringify(t.calls.at(-1));
+    const unique = panel.match(/media:unique:[a-f0-9]{32}/)![0];
+    const set = panel.match(/media:set:[a-f0-9]{32}/)![0];
+    assert(panel.includes("加入 PDQ Hash"));
+    await t.callback(2, unique);
+    assert(t.store.media.entries(-1).length === 0);
+    await t.callback(1, unique);
+    assert(t.store.media.entries(-1)[0].value === "unique");
+    await t.callback(1, unique);
+    assert(t.store.media.entries(-1).length === 1);
+    await t.callback(1, set);
+    assert(t.store.media.entries(-1).some((e) => e.value === "pack"));
+    assert(
+      !t.calls.some((c) =>
+        ["deleteMessage", "banChatMember", "getFile"].includes(c.method)
+      ),
+    );
+    t.store.db.prepare("UPDATE media_pending SET expires=0").run();
+    await t.callback(1, unique);
+    assert(JSON.stringify(t.calls.at(-1)).includes("过期"));
+  } finally {
+    t.store.close();
+  }
+});

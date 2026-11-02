@@ -676,3 +676,107 @@ Deno.test("历史原始消息重新分析使用完整回复与名片，保留原
     t.store.close();
   }
 });
+
+Deno.test("媒体黑名单API实时鉴权、群隔离、版本冲突和重复添加；备注及删除持久生效", async () => {
+  const t = setup();
+  try {
+    const auth = await signed();
+    const call = (method: string, body?: unknown, identity = auth) =>
+      t.handler(
+        new Request("http://localhost/api/media-blacklist", {
+          method,
+          headers: { Authorization: "Telegram " + identity },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        }),
+      );
+    assert((await call("GET", undefined, "")).status === 401);
+    assert(
+      (await call("GET", undefined, await signed("logs_-1"))).status === 401,
+    );
+    assert(
+      (await call("GET", undefined, await signed("settings_-2"))).status ===
+        403,
+    );
+    const initial = await (await call("GET")).json();
+    assert(
+      initial.revision === 0 && initial.entries.length === 0 &&
+        !initial.policies.image.enabled,
+    );
+    const input = {
+      kind: "image",
+      type: "unique",
+      value: "unique",
+      revision: 0,
+    };
+    const added = await (await call("POST", input)).json();
+    assert(added.revision === 1 && added.entries[0].value === "unique");
+    assert((await call("POST", input)).status === 409);
+    const duplicate = await (await call("POST", { ...input, revision: 1 }))
+      .json();
+    assert(duplicate.revision === 1 && duplicate.entries.length === 1);
+    const id = added.entries[0].id;
+    const noted = await (await call("POST", {
+      operation: "note",
+      id,
+      note: "example",
+      revision: 1,
+    })).json();
+    assert(noted.revision === 2 && noted.entries[0].note === "example");
+    t.state.role = "member";
+    assert((await call("DELETE", { id, revision: 2 })).status === 403);
+    t.state.role = "administrator";
+    assert(
+      (await call("POST", {
+        kind: "image",
+        type: "pdq",
+        value: "0".repeat(64),
+        quality: -1,
+        revision: 2,
+      })).status === 400,
+    );
+    const removed = await (await call("DELETE", { id, revision: 2 })).json();
+    assert(removed.entries.length === 0 && removed.revision === 3);
+  } finally {
+    t.store.close();
+  }
+});
+
+Deno.test("媒体策略独立保存、旧客户端不清空；校验动作权限和PDQ参数，名单修改使旧设置失效", async () => {
+  const t = setup();
+  try {
+    const auth = await signed();
+    const initial = await (await t.call(auth)).json();
+    const media = initial.settings.media;
+    media.image.enabled = true;
+    media.image.action = "ban";
+    t.state.restrict = false;
+    assert((await t.call(auth, { ...values, media })).status === 403);
+    t.state.restrict = true;
+    t.state.delete = false;
+    assert((await t.call(auth, { ...values, media })).status === 403);
+    t.state.delete = true;
+    assert(
+      (await t.call(auth, {
+        ...values,
+        media: { ...media, image: { ...media.image, distance: 257 } },
+      })).status === 400,
+    );
+    const saved = await (await t.call(auth, { ...values, media })).json();
+    assert(
+      saved.settings.media.image.action === "ban" &&
+        !saved.settings.media.sticker.enabled,
+    );
+    const legacy = await (await t.call(auth, { ...values, revision: 1 }))
+      .json();
+    assert(legacy.settings.media.image.enabled);
+    t.store.media.add(
+      -1,
+      42,
+      { kind: "sticker", type: "set", value: "Pack" },
+      2,
+    );
+    assert((await t.call(auth, { ...values, revision: 2 })).status === 409);
+  } finally {
+    t.store.close();
+  }
+});

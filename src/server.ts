@@ -1,3 +1,4 @@
+import { validateMediaPolicies } from "./media_store.ts";
 import { validateRules } from "./rules.ts";
 import { telemetryHandler } from "./telemetry.ts";
 import { type SettingsDependencies, settingsHandler } from "./web_settings.ts";
@@ -21,11 +22,17 @@ export function createHandler(
   const publicPage = page.replace("__SITE_KEY__", key).replace(
     "/*__RULE_VALIDATOR__*/ null",
     () => validateRules.toString(),
+  ).replace(
+    "/*__MEDIA_VALIDATOR__*/ null",
+    () => validateMediaPolicies.toString(),
   );
   let pageTag: Promise<string> | undefined;
   const telemetry = telemetryHandler(config, store);
   const settings = dependencies
     ? settingsHandler(config, store, dependencies)
+    : undefined;
+  const media = dependencies
+    ? settingsHandler(config, store, dependencies, "media")
     : undefined;
   const logs = dependencies
     ? settingsHandler(config, store, dependencies, "logs")
@@ -38,6 +45,11 @@ export function createHandler(
     : undefined;
   return async (request: Request): Promise<Response> => {
     const path = new URL(request.url).pathname;
+    if (path === "/api/media-blacklist") {
+      return media
+        ? await media(request)
+        : json(503, { error: "媒体黑名单服务不可用" });
+    }
     if (path === "/api/reanalyze") {
       return replay
         ? await replay(request)
