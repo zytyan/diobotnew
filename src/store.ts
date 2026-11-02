@@ -1,3 +1,4 @@
+import type { RegexRule } from "./rules.ts";
 import { DatabaseSync } from "node:sqlite";
 import { dirname } from "node:path";
 import type { Config } from "./config.ts";
@@ -61,6 +62,18 @@ export class Store {
         action_id TEXT NOT NULL, user_id INTEGER NOT NULL,
         state TEXT NOT NULL DEFAULT 'pending', PRIMARY KEY(action_id,user_id)
       );
+      CREATE TABLE IF NOT EXISTS raw_messages(id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL, message_id INTEGER NOT NULL, version_hash TEXT NOT NULL, seen_at INTEGER NOT NULL, message_json TEXT NOT NULL, update_json TEXT NOT NULL, context_json TEXT NOT NULL DEFAULT '{}', result_json TEXT, action TEXT NOT NULL DEFAULT 'received', bytes INTEGER NOT NULL, UNIQUE(chat_id,message_id,version_hash));
+      CREATE INDEX IF NOT EXISTS raw_messages_time ON raw_messages(seen_at DESC,id DESC);
+      CREATE INDEX IF NOT EXISTS raw_messages_chat ON raw_messages(chat_id,message_id,id DESC);
+      CREATE TABLE IF NOT EXISTS snapshot_reviews(review_id INTEGER PRIMARY KEY, snapshot_id INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS group_rules(chat_id INTEGER PRIMARY KEY, rules TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS group_events(id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL, seen_at INTEGER NOT NULL, body TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS group_events_time ON group_events(chat_id,seen_at DESC);
+      CREATE TABLE IF NOT EXISTS client_timings(id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, chat_id INTEGER NOT NULL, session_id TEXT NOT NULL, seen_at INTEGER NOT NULL, body TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS client_timings_time ON client_timings(seen_at);
+      CREATE INDEX IF NOT EXISTS client_timings_user ON client_timings(user_id,seen_at);
+      CREATE TABLE IF NOT EXISTS group_avatar_settings(chat_id INTEGER PRIMARY KEY, enabled INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS group_ai_settings(chat_id INTEGER PRIMARY KEY, threshold REAL NOT NULL CHECK(threshold>=0.5 AND threshold<=1));
       CREATE TABLE IF NOT EXISTS review_settings(chat_id INTEGER PRIMARY KEY, enabled INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS review_avatars(hash TEXT PRIMARY KEY, mime TEXT NOT NULL, bytes BLOB NOT NULL, last_used INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS review_messages(
@@ -118,9 +131,15 @@ export class Store {
       id,
     ) as unknown as Join | undefined;
   }
+  joinMessage(id: string, message: number | null) {
+    this.db.prepare("UPDATE joins SET message_id=? WHERE id=?").run(
+      message,
+      id,
+    );
+  }
   active() {
     return this.db.prepare(
-      "SELECT * FROM joins WHERE state IN ('pending','verified','failed','speech')",
+      "SELECT * FROM joins WHERE state IN ('pending','verified','failed','speech') OR (state='done' AND kind='direct' AND message_id IS NOT NULL)",
     ).all() as unknown as Join[];
   }
   resolve(
@@ -175,10 +194,247 @@ export class Store {
       leave: !!row.leave_notice,
       tree: !!row.tree,
       revision: Number(row.revision),
+      aiThreshold: this.groupThreshold(chat),
+      uploadAvatar: this.avatarEnabled(chat),
+      rules: this.rules(chat),
       review:
         this.db.prepare("SELECT enabled FROM review_settings WHERE chat_id=?")
           .get(chat)?.enabled !== 0,
     };
+  }
+  captureMessage(
+    chat: number,
+    message: number,
+    version: string,
+    rawMessage: string,
+    rawUpdate: string,
+    now = Date.now(),
+  ): number {
+    const bytes = new TextEncoder().encode(rawMessage).length +
+      new TextEncoder().encode(rawUpdate).length + 2;
+    this.db.prepare(
+      "INSERT OR IGNORE INTO raw_messages(chat_id,message_id,version_hash,seen_at,message_json,update_json,bytes) VALUES(?,?,?,?,?,?,?)",
+    ).run(chat, message, version, now, rawMessage, rawUpdate, bytes);
+    return Number(
+      this.db.prepare(
+        "SELECT id FROM raw_messages WHERE chat_id=? AND message_id=? AND version_hash=?",
+      ).get(chat, message, version)!.id,
+    );
+  }
+  snapshotContext(id: number, context: string, review?: number) {
+    this.db.prepare(
+      "UPDATE raw_messages SET bytes=bytes-length(CAST(context_json AS BLOB))+?,context_json=? WHERE id=?",
+    ).run(new TextEncoder().encode(context).length, context, id);
+    if (review !== undefined) {
+      this.db.prepare("INSERT OR REPLACE INTO snapshot_reviews VALUES(?,?)")
+        .run(review, id);
+    }
+  }
+  snapshotResult(id: number, action: string, result?: unknown) {
+    this.db.prepare(
+      "UPDATE raw_messages SET action=?,result_json=COALESCE(?,result_json) WHERE id=?",
+    ).run(action, result === undefined ? null : JSON.stringify(result), id);
+  }
+  rawMessage(chat: number, id: number): RawMessage | undefined {
+    return this.db.prepare(
+      "SELECT * FROM raw_messages WHERE chat_id=? AND id=?",
+    ).get(chat, id) as unknown as RawMessage | undefined;
+  }
+  latestRawMessage(chat: number, message: number): RawMessage | undefined {
+    return this.db.prepare(
+      "SELECT * FROM raw_messages WHERE chat_id=? AND message_id=? ORDER BY id DESC LIMIT 1",
+    ).get(chat, message) as unknown as RawMessage | undefined;
+  }
+  pruneRawMessages(now = Date.now()) {
+    this.db.prepare("DELETE FROM raw_messages WHERE seen_at<?").run(
+      now - 7 * 86400_000,
+    );
+    this.db.exec(
+      `DELETE FROM raw_messages WHERE id IN (SELECT id FROM (SELECT id,ROW_NUMBER() OVER (ORDER BY id DESC) AS n,SUM(bytes) OVER (ORDER BY id DESC) AS total FROM raw_messages) WHERE n>10000 OR total>268435456);
+      DELETE FROM snapshot_reviews WHERE snapshot_id NOT IN (SELECT id FROM raw_messages) OR review_id NOT IN (SELECT id FROM review_messages);`,
+    );
+  }
+  rules(chat: number): RegexRule[] {
+    return JSON.parse(
+      String(
+        this.db.prepare("SELECT rules FROM group_rules WHERE chat_id=?").get(
+          chat,
+        )?.rules ?? "[]",
+      ),
+    );
+  }
+  groupEvent(chat: number, event: unknown) {
+    this.db.prepare(
+      "INSERT INTO group_events(chat_id,seen_at,body) VALUES(?,?,?)",
+    ).run(chat, Date.now(), JSON.stringify(event));
+    this.db.prepare("DELETE FROM group_events WHERE seen_at<?").run(
+      Date.now() - 7 * 86400_000,
+    );
+    this.db.exec(
+      "DELETE FROM group_events WHERE id NOT IN (SELECT id FROM group_events ORDER BY id DESC LIMIT 10000)",
+    );
+  }
+  groupLogs(chat: number) {
+    this.db.prepare("DELETE FROM client_timings WHERE seen_at<?").run(
+      Date.now() - 3 * 86400_000,
+    );
+    this.db.prepare("DELETE FROM group_events WHERE seen_at<?").run(
+      Date.now() - 7 * 86400_000,
+    );
+    const events = this.db.prepare(
+      "SELECT id,seen_at,body FROM group_events WHERE chat_id=? ORDER BY seen_at DESC,id DESC LIMIT 100",
+    ).all(chat)
+      .map((row) => ({
+        id: `action-${row.id}`,
+        time: Number(row.seen_at),
+        kind: "action",
+        data: JSON.parse(String(row.body)),
+      }));
+    const timings = this.db.prepare(
+      "SELECT id,seen_at,body,user_id FROM client_timings WHERE chat_id=? ORDER BY seen_at DESC LIMIT 100",
+    ).all(chat)
+      .map((row) => ({
+        id: `client-${row.id}`,
+        time: Number(row.seen_at),
+        kind: "client",
+        data: { user_id: Number(row.user_id), ...JSON.parse(String(row.body)) },
+      }));
+    const reviews = this.db.prepare(
+      "SELECT id,seen_at,message_id,sender_id,text,action,result_json FROM review_messages WHERE chat_id=? ORDER BY seen_at DESC,id DESC LIMIT 100",
+    ).all(chat)
+      .map((row) => ({
+        id: `review-${row.id}`,
+        time: Number(row.seen_at),
+        kind: "review",
+        data: {
+          message_id: row.message_id,
+          sender_id: row.sender_id,
+          text: String(row.text).slice(0, 500),
+          action: row.action,
+          result: row.result_json ? JSON.parse(String(row.result_json)) : null,
+        },
+      }));
+    const originals = this.db.prepare(
+      "SELECT id,seen_at,message_id,message_json,action FROM raw_messages WHERE chat_id=? ORDER BY id DESC LIMIT 100",
+    ).all(chat).map((row) => {
+      const message = JSON.parse(String(row.message_json));
+      return {
+        id: `raw-${row.id}`,
+        time: Number(row.seen_at),
+        kind: "message",
+        data: {
+          snapshot_id: Number(row.id),
+          message_id: row.message_id,
+          sender_id: message.from?.id,
+          action: row.action,
+          text: String(message.text ?? message.caption ?? "[非文字消息]").slice(
+            0,
+            500,
+          ),
+          edited: !!message.edit_date,
+        },
+      };
+    });
+    return [...events, ...timings, ...reviews, ...originals].sort((a, b) =>
+      b.time - a.time
+    )
+      .slice(0, 100);
+  }
+  clientTimings(
+    user: number,
+    chat: number,
+    session: string,
+    events: { id: string }[],
+    now = Date.now(),
+  ): boolean {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.prepare("DELETE FROM client_timings WHERE seen_at<?").run(
+        now - 3 * 86400_000,
+      );
+      const count = Number(
+        this.db.prepare(
+          "SELECT COUNT(*) AS total FROM client_timings WHERE user_id=? AND seen_at>?",
+        ).get(user, now - 60_000)!.total,
+      );
+      const fresh = events.filter((event) =>
+        !this.db.prepare("SELECT 1 FROM client_timings WHERE id=?").get(
+          event.id,
+        )
+      );
+      if (count + fresh.length > 120) {
+        this.db.exec("ROLLBACK");
+        return false;
+      }
+      const insert = this.db.prepare(
+        "INSERT OR IGNORE INTO client_timings VALUES(?,?,?,?,?,?)",
+      );
+      for (const event of fresh) {
+        insert.run(event.id, user, chat, session, now, JSON.stringify(event));
+      }
+      this.db.exec(
+        "DELETE FROM client_timings WHERE id IN (SELECT id FROM client_timings ORDER BY seen_at DESC,id DESC LIMIT -1 OFFSET 10000)",
+      );
+      this.db.exec("COMMIT");
+      return true;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  avatarEnabled(chat: number): boolean {
+    return this.db.prepare(
+      "SELECT enabled FROM group_avatar_settings WHERE chat_id=?",
+    ).get(chat)?.enabled !== 0;
+  }
+  groupThreshold(chat: number): number | undefined {
+    const row = this.db.prepare(
+      "SELECT threshold FROM group_ai_settings WHERE chat_id=?",
+    ).get(chat);
+    return row ? Number(row.threshold) : undefined;
+  }
+  saveSettings(chat: number, value: GroupSettings, revision: number): boolean {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const changed = this.db.prepare(
+        `UPDATE group_settings SET verification=?,moderation=?,welcome=?,kicked=?,leave_notice=?,tree=?,revision=revision+1 WHERE chat_id=? AND revision=?`,
+      )
+        .run(
+          Number(value.verification),
+          value.moderation,
+          Number(value.welcome),
+          Number(value.kicked),
+          Number(value.leave),
+          Number(value.tree),
+          chat,
+          revision,
+        ).changes > 0;
+      if (changed) {
+        if (value.rules !== undefined) {
+          this.db.prepare("INSERT OR REPLACE INTO group_rules VALUES(?,?)").run(
+            chat,
+            JSON.stringify(value.rules),
+          );
+        }
+        this.db.prepare(
+          "INSERT OR REPLACE INTO group_avatar_settings VALUES(?,?)",
+        ).run(chat, Number(value.uploadAvatar ?? this.avatarEnabled(chat)));
+        this.db.prepare("INSERT OR REPLACE INTO review_settings VALUES(?,?)")
+          .run(chat, Number(value.review));
+        this.db.prepare("INSERT OR REPLACE INTO group_ai_settings VALUES(?,?)")
+          .run(chat, value.aiThreshold!);
+        if (!value.verification) {
+          this.db.prepare(
+            "UPDATE joins SET state='verified' WHERE chat_id=? AND state IN ('pending','failed')",
+          ).run(chat);
+        }
+      }
+      this.db.exec("COMMIT");
+      return changed;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
   updateSetting(
     chat: number,
@@ -439,9 +695,18 @@ export class Store {
     }
     return this.db.prepare(
       "UPDATE review_messages SET human_label=?,reviewed_by=?,reviewed_at=? WHERE id=? AND chat_id=?",
-    ).run(label, reviewer, Date.now(), id, chat).changes > 0;
+    ).run(
+      label === "scam" ? "advertisement" : label,
+      reviewer,
+      Date.now(),
+      id,
+      chat,
+    ).changes > 0;
   }
   forgetReviewSender(chat: number, user: number) {
+    this.db.prepare(
+      "DELETE FROM raw_messages WHERE chat_id=? AND json_extract(message_json,'$.from.id')=?",
+    ).run(chat, user);
     this.db.prepare(
       "DELETE FROM moderation WHERE chat_id=? AND message_id IN (SELECT message_id FROM review_messages WHERE chat_id=? AND sender_id=?)",
     ).run(chat, chat, user);
@@ -460,8 +725,11 @@ export class Store {
 }
 
 export interface GroupSettings {
+  rules?: RegexRule[];
+  uploadAvatar?: boolean;
+  aiThreshold?: number;
   verification: boolean;
-  moderation: "off" | "observe" | "delete";
+  moderation: "off" | "observe" | "delete" | "mute" | "ban";
   welcome: boolean;
   kicked: boolean;
   leave: boolean;
@@ -515,4 +783,18 @@ export interface ReviewRow {
   human_label: string | null;
   reviewed_by: number | null;
   reviewed_at: number | null;
+}
+
+export interface RawMessage {
+  id: number;
+  chat_id: number;
+  message_id: number;
+  version_hash: string;
+  seen_at: number;
+  message_json: string;
+  update_json: string;
+  context_json: string;
+  result_json: string | null;
+  action: string;
+  bytes: number;
 }

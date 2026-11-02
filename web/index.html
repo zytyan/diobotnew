@@ -3,54 +3,1279 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>入群验证</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <title>Diobot 群管理</title>
     <style>
+    :root {
+      color-scheme: light dark;
+    }
     body {
       font: 16px system-ui;
-      padding: 24px;
+      padding: 24px 18px;
       margin: auto;
-      max-width: 400px;
+      max-width: 560px;
       color: var(--tg-theme-text-color, #222);
       background: var(--tg-theme-bg-color, #fff);
     }
-    #message {
-      line-height: 1.6;
+    h1 {
+      font-size: 24px;
+      margin: 0 0 12px;
+    }
+    h2 {
+      font-size: 18px;
+      margin-top: 0;
+    }
+    p {
+      line-height: 1.65;
+    }
+    .hint {
+      font-size: 14px;
+      color: var(--tg-theme-hint-color, #666);
+    }
+    .card {
+      padding: 18px;
+      margin: 18px 0;
+      border: 1px solid #8885;
+      border-radius: 14px;
+    }
+    fieldset {
+      border: 0;
+      padding: 0;
+      margin: 0;
+      min-width: 0;
+    }
+    label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 12px 0;
+    }
+    label.stacked {
+      display: block;
+    }
+    select,
+    input[type=number] {
+      box-sizing: border-box;
+      width: 100%;
+      font: inherit;
+      padding: 10px;
+      margin-top: 8px;
+      border: 1px solid #8888;
+      border-radius: 8px;
+      color: inherit;
+      background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+    }
+    .actions {
+      flex-wrap: wrap;
+    }
+    button,
+    select,
+    input {
+      min-height: 44px;
+    }
+    .rule-card {
+      border: 1px solid #8886;
+      border-radius: 12px;
+      margin: 12px 0;
+      padding: 12px;
+    }
+    .rule-card label {
+      display: block;
+      padding: 8px 0;
+    }
+    .rule-card input:not([type=checkbox]),
+    .rule-card select {
+      width: 100%;
+      box-sizing: border-box;
+      font: inherit;
+      margin-top: 6px;
+      padding: 10px;
+      border: 1px solid #8888;
+      border-radius: 8px;
+      background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+      color: inherit;
+    }
+    .rule-condition {
+      border-top: 1px solid #8885;
+      margin-top: 10px;
+    }
+    .rule-condition input {
+      font-family: ui-monospace, monospace !important;
+    }
+    .rule-tools {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 10px 0;
+    }
+    .log-item {
+      border-bottom: 1px solid #8885;
+      padding: 14px 0;
+      overflow-wrap: anywhere;
+    }
+    .log-item pre {
+      white-space: pre-wrap;
+      font-size: 13px;
+    }
+    .log-item h3 {
+      font-size: 17px;
+      margin: 8px 0;
+    }
+    #logs-toolbar {
+      position: sticky;
+      top: 0;
+      background: var(--tg-theme-bg-color, #fff);
+      padding: 10px 0;
+      z-index: 2;
+    }
+    input[type=checkbox] {
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+      accent-color: var(--tg-theme-button-color, #2878df);
     }
     button {
-      padding: 10px 20px;
-      margin-top: 16px;
+      font: inherit;
+      padding: 12px 18px;
+      border: 0;
+      border-radius: 10px;
+      cursor: pointer;
+      color: var(--tg-theme-button-text-color, #fff);
+      background: var(--tg-theme-button-color, #2878df);
+    }
+    button:disabled {
+      opacity: .55;
+      cursor: default;
+    }
+    .actions {
+      display: flex;
+      gap: 12px;
+    }
+    #status {
+      min-height: 26px;
+      white-space: pre-wrap;
+    }
+    body {
+      padding-bottom: 110px;
+    }
+    #save-dock {
+      position: sticky;
+      bottom: 0;
+      z-index: 4;
+      padding: 12px 0 max(12px, env(safe-area-inset-bottom));
+      background: var(--tg-theme-bg-color, #fff);
+      border-top: 1px solid #8885;
+    }
+    #save-state {
+      margin: 0 0 10px;
+      font-weight: 600;
+    }
+    #error-notice {
+      position: fixed;
+      bottom: calc(105px + env(safe-area-inset-bottom));
+      left: 12px;
+      right: 12px;
+      max-width: 540px;
+      margin: auto;
+      z-index: 10;
+      padding: 16px;
+      border: 2px solid #c33131;
+      border-radius: 12px;
+      background: #fff0ed;
+      color: #8c1616;
+      box-shadow: 0 6px 24px #0003;
+    }
+    #error-notice strong {
+      display: block;
+      font-size: 18px;
+    }
+    #error-text {
+      margin: 8px 0 12px;
+    }
+    #error-notice button {
+      background: #a21d1d;
+      color: white;
+    }
+    #timing-summary {
+      white-space: pre-wrap;
+    }
+    details {
+      margin: 18px 0;
+    }
+    input[aria-invalid="true"] {
+      border: 2px solid #c33131;
+    }
+    [hidden] {
+      display: none !important;
     }
     </style>
   </head>
   <body>
-<h2>入群验证</h2><p id="message">请完成验证，验证通过后将自动处理您的入群申请。</p>
-<div id="challenge"></div><button id="retry" hidden>重新验证</button>
-<script>
-const app = window.Telegram?.WebApp;
-const message = document.getElementById('message');
-const retry = document.getElementById('retry');
-let widget;
-retry.onclick = () => { retry.hidden = true; turnstile.reset(widget); };
-window.onTurnstile = () => {
-  if (!app?.initData) { message.textContent = '请从 Telegram 中的专属验证链接打开本页面。'; return; }
-  app.ready();
-  widget = turnstile.render('#challenge', {
-    sitekey: '__SITE_KEY__', action: 'join', cData: app.initDataUnsafe.start_param,
-    callback: async token => {
+    <section id="boot" role="status" aria-live="polite">
+      <h1>Diobot 群管理</h1>
+      <p>正在连接，请稍候…</p>
+    </section>
+    <script id="bootstrap">
+    (() => {
       try {
-        const response = await fetch('/verify', { method: 'POST', headers: {'Content-Type':'application/json', Authorization:'Telegram '+app.initData}, body:JSON.stringify({token}) });
-        const result = await response.json();
-        message.textContent = result.success ? '验证通过，正在处理，请返回群组查看。' : result.error;
-        if (result.success) setTimeout(() => app.close(), 1200);
-        else retry.hidden = false;
-      } catch { message.textContent = '网络异常，请重试。'; retry.hidden = false; }
-    },
-    'expired-callback': () => { message.textContent = '验证码已过期，请重试。'; retry.hidden = false; },
-    'error-callback': () => { message.textContent = '验证服务暂时不可用，请重试。'; retry.hidden = false; }
-  });
-};
-</script>
-<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstile&render=explicit" async defer></script>
+        const launch = new URLSearchParams(location.hash.slice(1));
+        const theme = JSON.parse(launch.get("tgWebAppThemeParams") || "{}");
+        for (
+          const key of [
+            "bg_color",
+            "text_color",
+            "hint_color",
+            "button_color",
+            "button_text_color",
+            "secondary_bg_color",
+          ]
+        ) {
+          if (/^#[0-9a-f]{6}$/i.test(theme[key] || "")) {
+            document.documentElement.style.setProperty(
+              "--tg-theme-" + key.replaceAll("_", "-"),
+              theme[key],
+            );
+          }
+        }
+      } catch {}
+      // Notify the native client while the loading shell is already present.
+      // No SDK download or settings API request is needed to reveal the page.
+      try {
+        const event = { eventType: "web_app_ready", eventData: "" };
+        let notified = true;
+        if (window.TelegramWebviewProxy?.postEvent) {
+          window.TelegramWebviewProxy.postEvent(
+            event.eventType,
+            JSON.stringify(event.eventData),
+          );
+        } else if (window.external?.notify) {
+          window.external.notify(JSON.stringify(event));
+        } else if (window.parent && window.parent !== window) {
+          window.parent.postMessage(
+            JSON.stringify(event),
+            "https://web.telegram.org",
+          );
+        } else notified = false;
+        if (notified) window.diobotBootstrapReady = performance.now();
+      } catch {}
+      let sdkRequested = false;
+      const sdk = () => {
+        if (sdkRequested) return;
+        sdkRequested = true;
+        const script = document.createElement("script");
+        script.src = "https://telegram.org/js/telegram-web-app.js";
+        script.async = true;
+        script.onload = () => {
+          window.Telegram?.WebApp?.ready();
+          window.diobotSdkReady?.();
+        };
+        document.head.appendChild(script);
+      };
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(() => setTimeout(sdk, 0));
+      }
+      // Hidden WebViews may pause animation frames; keep the SDK fallback alive.
+      setTimeout(sdk, 150);
+    })();
+    </script>
+    <section id="join">
+      <h1>入群验证</h1><p id="message">请完成验证，验证通过后将自动处理您的入群申请。</p>
+      <div id="challenge"></div><button id="retry" hidden>重新验证</button>
+    </section>
+    <section id="settings" hidden>
+      <h1>Diobot 群管理</h1>
+      <p id="identity" class="hint">正在验证 Telegram 身份与群管理员权限…</p>
+      <p id="status" role="status" aria-live="polite"></p>
+      <form id="settings-form" hidden>
+        <fieldset id="fields" disabled>
+          <div class="card">
+            <h2>广告审核</h2>
+            <label class="stacked" for="moderation">处理方式
+              <select id="moderation"><option value="off">关闭</option><option value="observe">仅观察</option><option value="delete">自动删除</option><option value="mute">删消息并禁言</option><option value="ban">删消息并封禁</option></select>
+            </label>
+            <label class="stacked" for="threshold">本群处理阈值（%）
+              <input id="threshold" type="number" min="50" max="100" step="0.1" required>
+            </label>
+            <p
+              class="hint">阈值越低越容易触发处理。垃圾广告包含诈骗和加群引流。禁言会保留成员，由管理员解除；封禁会移出群并禁止再次加入。修改后自动保存。</p>
+          </div>
+          <div class="card">
+            <h2>黑白名单正则</h2>
+            <p class="hint">从上到下匹配，首个命中后直接放行或封禁，不调用 AI。单条规则可含多个条件，组内条件必须全部满足（AND）。这些规则独立于 AI 开关。</p>
+            <p class="hint">可选择用户名、bio 或消息内容。用户名不含 @；不可见的 bio 不会匹配。消息包括 caption、投票、清单、文件名和隐藏链接。正则不需两侧斜线，标志支持 i/m/s/u。</p>
+            <div id="rules-list"></div><button id="add-rule" type="button">新增规则 / 规则组</button>
+          </div>
+          <div class="card">
+            <h2>头像识别</h2>
+            <label
+              for="uploadAvatar">上传发送者头像参与审核<input id="uploadAvatar" type="checkbox"></label>
+            <p
+              class="hint">关闭后，新消息不再下载、留存或上传头像；显示名、用户名与 bio 仍参与审核。仅支持直接传图片的模型会接收头像。</p>
+          </div>
+          <div class="card">
+            <h2>群功能</h2>
+            <label
+              for="verification">入群人机验证<input id="verification" type="checkbox"></label>
+            <label
+              for="welcome">欢迎消息<input id="welcome" type="checkbox"></label>
+            <label
+              for="kicked">移出 / 封禁通知<input id="kicked" type="checkbox"></label>
+            <label
+              for="leave">离开通知<input id="leave" type="checkbox"></label>
+            <label for="tree">砍树提示<input id="tree" type="checkbox"></label>
+            <label
+              for="review">近期样本记录<input id="review" type="checkbox"></label>
+          </div>
+          <p id="limits" class="hint"></p>
+          <details><summary>加载耗时与诊断</summary><p id="timing-summary" class="hint"></p><p id="report-status" class="hint">耗时日志自动回传，失败会暂存并在下次连接成功时重试。</p><button id="send-logs" type="button">回传诊断日志</button></details>
+          <div id="save-dock">
+            <p id="save-state" role="status"
+              aria-live="polite">修改后自动保存</p>
+            <div
+              class="actions"><button id="save-now" type="submit">立即保存</button><button id="reload" type="button">重新加载</button></div>
+          </div>
+        </fieldset>
+      </form>
+      <button id="load-again" type="button" hidden>重试加载</button>
+      <p
+        class="hint">修改仅对当前群生效。身份凭据有效期为 5 分钟，过期请返回群内 /settings 重新打开。</p>
+    </section>
+    <section id="logs" hidden>
+      <h1>本群日志</h1>
+      <p id="logs-identity" class="hint">正在验证群管理员权限…</p>
+      <div
+        id="logs-toolbar"><label class="stacked" for="logs-filter">日志类型<select id="logs-filter"><option value="all">全部</option><option value="action">处理与设置操作</option><option value="review">审核样本</option><option value="client">客户端耗时</option><option value="message">原始消息</option></select></label><button id="logs-refresh" type="button">刷新日志</button></div>
+      <p id="logs-status" role="status" aria-live="polite"></p>
+      <div id="log-entries"></div>
+      <p
+        class="hint">仅展示本群最近100条记录。完整原始消息保存7天，最多10000个版本、总量256MiB；附件保留Telegram提供的file_id。返回群内 /settings 可打开设置页。</p>
+    </section>
+    <aside id="error-notice" role="alert" aria-live="assertive"
+      hidden><strong id="error-title">操作失败</strong><p id="error-text"></p><div class="actions"><button id="error-retry" type="button">重试</button><button id="error-reload" type="button">重新加载</button></div></aside>
+    <script>
+    const app = () => window.Telegram?.WebApp;
+    const launch = new URLSearchParams(location.hash?.slice(1) || "");
+    const initData = app()?.initData || launch.get("tgWebAppData") || "";
+    const el = (id) => document.getElementById(id);
+    const start = new URLSearchParams(initData).get("start_param") ||
+      new URLSearchParams(location.search).get("tgWebAppStartParam") || "";
+    app()?.ready();
+    el("boot").hidden = true;
+    function observeScripts(callback) {
+      const seen = new Set();
+      const collect = (entry) => {
+        if (
+          entry.initiatorType !== "script" && !/\.m?js(?:[/?]|$)/i.test(entry.name)
+        ) return;
+        const key = `${entry.name}:${entry.startTime}:${entry.duration}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        try {
+          const source = new URL(entry.name, location.href);
+          if (!["http:", "https:"].includes(source.protocol)) return;
+          const metrics = {};
+          const full = entry.requestStart > 0 && entry.responseStart > 0;
+          if (full) {
+            metrics.dns_ms = Math.max(
+              0,
+              entry.domainLookupEnd - entry.domainLookupStart,
+            );
+            metrics.connect_ms = Math.max(0, entry.connectEnd - entry.connectStart);
+            metrics.tls_ms = entry.secureConnectionStart
+              ? Math.max(0, entry.connectEnd - entry.secureConnectionStart)
+              : 0;
+            metrics.ttfb_ms = Math.max(0, entry.responseStart - entry.requestStart);
+            metrics.download_ms = Math.max(
+              0,
+              entry.responseEnd - entry.responseStart,
+            );
+          }
+          callback({
+            name: "script_load",
+            duration_ms: Math.max(0, Math.round(entry.duration)),
+            status: entry.responseStatus || 0,
+            error: entry.responseStatus >= 400 ? "http" : "none",
+            resource: (source.origin + source.pathname).slice(0, 512),
+            timing_detail: full ? "full" : "restricted",
+            metrics,
+          });
+        } catch {}
+      };
+      for (const entry of performance.getEntriesByType?.("resource") || []) {
+        collect(entry);
+      }
+      if (typeof PerformanceObserver !== "undefined") {
+        try {
+          const observer = new PerformanceObserver((list) => {
+            for (const entry of list.getEntries()) collect(entry);
+          });
+          observer.observe({ type: "resource", buffered: true });
+        } catch {}
+      }
+    }
+    const logsView = start.startsWith("logs_") ||
+      new URLSearchParams(location.search).get("view") === "logs";
+    if (logsView) {
+      el("join").hidden = true;
+      el("logs").hidden = false;
+      app()?.expand();
+      let entries = [];
+      const labels = {
+        action: "处理/设置",
+        message: "原始消息",
+        received: "已留存原始消息",
+        reanalysis: "历史样本AI重新分析（未处罚）",
+        review: "审核",
+        client: "客户端耗时",
+        rule_allowed: "规则直接放行",
+        rule_banned: "规则直接封禁",
+        rule_ban_failed: "规则封禁失败",
+        rule_banned_delete_failed: "已封禁，删消息失败",
+        banned: "已封禁",
+        muted: "已禁言",
+        deleted: "已删除",
+        observed: "仅观察",
+        kept: "保留",
+        settings_changed: "设置已更新，跳过旧任务",
+        deleted_ban_failed: "已删消息，封禁失败",
+        deleted_mute_failed: "已删消息，禁言失败",
+        quota_skipped: "额度用完，跳过AI",
+        provider_error: "AI请求失败",
+        recorded: "已留样",
+        settings_saved: "保存群设置",
+        moderation: "消息审核",
+        rules_error: "规则执行异常",
+      };
+      function renderLogs() {
+        const container = el("log-entries");
+        container.textContent = "";
+        const shown = entries.filter((row) =>
+          el("logs-filter").value === "all" || row.kind === el("logs-filter").value
+        );
+        if (!shown.length) container.textContent = "当前没有此类日志。";
+        for (const row of shown) {
+          const item = document.createElement("article");
+          item.className = "log-item";
+          const when = document.createElement("p");
+          when.className = "hint";
+          when.textContent = `${new Date(row.time).toLocaleString()} · ${
+            labels[row.kind] || row.kind
+          }`;
+          const title = document.createElement("h3");
+          title.textContent = row.kind === "client"
+            ? `${
+              row.data.name === "script_load"
+                ? "脚本加载：" + row.data.resource
+                : row.data.name
+            } · ${row.data.duration_ms} ms${
+              row.data.timing_detail === "restricted" ? "（仅总耗时可见）" : ""
+            } · HTTP ${row.data.status}`
+            : labels[row.data.action] || labels[row.data.event] ||
+              row.data.action || "记录";
+          const text = document.createElement("p");
+          text.textContent = row.data.text || row.data.result?.reason ||
+            (row.data.actor_id ? `操作人：${row.data.actor_id}` : "");
+          const details = document.createElement("details");
+          const summary = document.createElement("summary");
+          summary.textContent = "查看详情";
+          const pre = document.createElement("pre");
+          pre.textContent = JSON.stringify(row.data, null, 2);
+          details.append(summary, pre);
+          if (row.data.snapshot_id) {
+            const download = document.createElement("button");
+            download.type = "button";
+            download.textContent = "查看 / 下载完整原始 JSON";
+            download.onclick = async () => {
+              download.disabled = true;
+              try {
+                const response = await fetch(
+                  `/api/raw-message?id=${row.data.snapshot_id}`,
+                  {
+                    headers: { Authorization: "Telegram " + initData },
+                    cache: "no-store",
+                  },
+                );
+                const result = await response.json();
+                if (!response.ok) {
+                  throw new Error(result.error || "读取原始消息失败");
+                }
+                const rawDetails = document.createElement("details");
+                rawDetails.open = true;
+                const rawSummary = document.createElement("summary");
+                rawSummary.textContent = "完整原始消息 JSON";
+                const rawText = document.createElement("pre");
+                rawText.textContent = JSON.stringify(result, null, 2);
+                rawDetails.append(rawSummary, rawText);
+                details.append(rawDetails);
+                const url = URL.createObjectURL(
+                  new Blob([JSON.stringify(result, null, 2)], {
+                    type: "application/json",
+                  }),
+                );
+                const link = document.createElement("a");
+                link.href = url;
+                link.download =
+                  `diobot-message-${result.message_id}-snapshot-${result.id}.json`;
+                link.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+                el("logs-status").textContent =
+                  "原始消息已导出，包含 Telegram 提供的完整字段。";
+              } catch (error) {
+                el("error-title").textContent = "原始消息导出失败";
+                el("error-text").textContent = error.message || "网络连接失败";
+                el("error-notice").hidden = false;
+              } finally {
+                download.disabled = false;
+              }
+            };
+            details.append(download);
+            const replay = document.createElement("button");
+            replay.type = "button";
+            replay.textContent = "AI重新分析（不处罚）";
+            replay.onclick = async () => {
+              replay.disabled = true;
+              replay.textContent = "正在重新分析…";
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(), 25000);
+              try {
+                const response = await fetch("/api/reanalyze", {
+                  method: "POST",
+                  signal: controller.signal,
+                  headers: {
+                    Authorization: "Telegram " + initData,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ snapshot_id: row.data.snapshot_id }),
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || "AI重新分析失败");
+                const names = {
+                  normal: "正常",
+                  advertisement: "垃圾广告",
+                  uncertain: "不确定",
+                };
+                const output = document.createElement("p");
+                output.textContent = `重新分析：${
+                  names[result.verdict.label] || result.verdict.label
+                }${
+                  typeof result.verdict.score === "number"
+                    ? " " + (result.verdict.score * 100).toFixed(1) + "%"
+                    : ""
+                }；${result.verdict.reason}。仅分析，未执行处罚。`;
+                item.append(output);
+                el("logs-status").textContent = result.message;
+              } catch (error) {
+                el("error-title").textContent = "重新分析失败";
+                el("error-text").textContent = error.name === "AbortError"
+                  ? "重新分析超时，请稍后刷新日志确认结果。"
+                  : error.message || "网络连接失败";
+                el("error-notice").hidden = false;
+              } finally {
+                clearTimeout(timer);
+                replay.disabled = false;
+                replay.textContent = "AI重新分析（不处罚）";
+              }
+            };
+            details.append(replay);
+          }
+          item.append(when, title, text, details);
+          container.append(item);
+        }
+      }
+      async function loadLogs() {
+        el("logs-refresh").disabled = true;
+        el("logs-status").textContent = "正在加载日志…";
+        el("error-notice").hidden = true;
+        const started = performance.now();
+        let status = 0, errorType = "none";
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 12000);
+        try {
+          const response = await fetch("/api/logs", {
+            headers: { Authorization: "Telegram " + initData },
+            signal: controller.signal,
+            cache: "no-store",
+          });
+          status = response.status;
+          const result = await response.json();
+          if (!response.ok) {
+            errorType = "http";
+            throw new Error(result.error || `读取失败（HTTP ${status}）`);
+          }
+          entries = result.logs;
+          el("logs-identity").textContent =
+            `${result.chat.title} · 群 ID：${result.chat.id} · 用户 ID：${result.userId}`;
+          renderLogs();
+          el("logs-status").textContent = `已加载 ${entries.length} 条日志（${
+            Math.round(performance.now() - started)
+          } ms）`;
+        } catch (error) {
+          if (error.name === "AbortError") errorType = "timeout";
+          else if (error instanceof TypeError) errorType = "network";
+          else if (errorType === "none") errorType = "format";
+          if (status === 401 || status === 403) {
+            entries = [];
+            el("log-entries").textContent = "权限已失效，请从群内重新打开。";
+          }
+          const text = errorType === "timeout"
+            ? "日志加载超时，请重试"
+            : errorType === "network"
+            ? "网络连接失败，请重试加载日志"
+            : errorType === "format"
+            ? `日志响应格式异常（HTTP ${status}），请重试`
+            : error.message;
+          el("logs-status").textContent = text;
+          el("error-title").textContent = "日志加载失败";
+          el("error-text").textContent = text;
+          el("error-notice").hidden = false;
+        } finally {
+          clearTimeout(timer);
+          el("logs-refresh").disabled = false;
+          void fetch("/api/client-logs", {
+            method: "POST",
+            keepalive: true,
+            headers: {
+              Authorization: "Telegram " + initData,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              session: crypto.randomUUID(),
+              events: [{
+                id: crypto.randomUUID(),
+                name: "logs_load",
+                duration_ms: Math.round(performance.now() - started),
+                status,
+                error: errorType,
+              }],
+            }),
+          }).catch(() => {});
+        }
+      }
+      el("logs-filter").onchange = renderLogs;
+      el("logs-refresh").onclick =
+        el("error-retry").onclick =
+        el("error-reload")
+          .onclick =
+          () => {
+            observeScripts((event) => {
+              void fetch("/api/client-logs", {
+                method: "POST",
+                keepalive: true,
+                headers: {
+                  Authorization: "Telegram " + initData,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  session: crypto.randomUUID(),
+                  events: [{ id: crypto.randomUUID(), ...event }],
+                }),
+              }).catch(() => {});
+            });
+            void loadLogs();
+          };
+      void loadLogs();
+    } else if (start.startsWith("settings_")) {
+      el("join").hidden = true;
+      el("settings").hidden = false;
+      document.title = "Diobot 群管理";
+      app()?.expand();
+      const keys = [
+        "verification",
+        "welcome",
+        "kicked",
+        "leave",
+        "tree",
+        "review",
+        "uploadAvatar",
+      ];
+      const clock = () =>
+        typeof performance !== "undefined" ? performance.now() : 0;
+      const uuid = () => crypto.randomUUID();
+      const session = uuid();
+      let userKey = "unknown";
+      try {
+        userKey =
+          JSON.parse(new URLSearchParams(initData).get("user") || "{}").id ||
+          "unknown";
+      } catch {}
+      const logKey = `diobot-timings:${userKey}:${start}`;
+      let logs = [];
+      try {
+        logs = JSON.parse(window.localStorage?.getItem(logKey) || "[]").slice(-40);
+      } catch {}
+      const stash = () => {
+        try {
+          window.localStorage?.setItem(logKey, JSON.stringify(logs.slice(-40)));
+        } catch {}
+      };
+      let reporting = false;
+      function record(
+        name,
+        duration,
+        status = 0,
+        error = "none",
+        request_id = "",
+        metrics = {},
+      ) {
+        logs.push({
+          id: uuid(),
+          name,
+          duration_ms: Math.max(0, Math.round(duration)),
+          status,
+          error,
+          request_id,
+          metrics,
+        });
+        logs = logs.slice(-40);
+        stash();
+        if (name === "settings_load" || name === "settings_save") {
+          el("timing-summary").textContent = `${
+            name === "settings_load" ? "最近加载" : "最近保存"
+          }：${Math.round(duration)} ms；HTTP ${status || "未收到响应"}${
+            metrics.server_ms !== undefined
+              ? `；服务端 ${metrics.server_ms} ms`
+              : ""
+          }${request_id ? `\n请求编号：${request_id}` : ""}`;
+        }
+      }
+      async function flushLogs() {
+        if (reporting || !logs.length || !initData) return;
+        reporting = true;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        try {
+          const batch = logs.slice(0, 20);
+          const response = await fetch("/api/client-logs", {
+            method: "POST",
+            keepalive: true,
+            signal: controller.signal,
+            headers: {
+              Authorization: "Telegram " + initData,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ session, events: batch }),
+          });
+          if (!response.ok) throw new Error();
+          const sent = new Set(batch.map((item) => item.id));
+          logs = logs.filter((item) => !sent.has(item.id));
+          stash();
+          el("report-status").textContent = logs.length
+            ? `已回传，剩余 ${logs.length} 条待发送`
+            : "客户端耗时日志已回传";
+        } catch {
+          el("report-status").textContent =
+            `日志暂存中（${logs.length} 条），下次连接成功时重试`;
+        } finally {
+          clearTimeout(timer);
+          reporting = false;
+        }
+      }
+      if (window.diobotBootstrapReady !== undefined) {
+        record("bootstrap_ready", window.diobotBootstrapReady);
+      }
+      observeScripts((event) => {
+        logs.push({ id: uuid(), ...event });
+        logs = logs.slice(-40);
+        stash();
+        void flushLogs();
+      });
+      record("page_ready", clock());
+      const nav = typeof performance !== "undefined"
+        ? performance.getEntriesByType?.("navigation")?.[0]
+        : undefined;
+      if (nav) {
+        record("navigation", nav.responseEnd || clock(), 0, "none", "", {
+          dns_ms: Math.max(0, nav.domainLookupEnd - nav.domainLookupStart),
+          connect_ms: Math.max(0, nav.connectEnd - nav.connectStart),
+          tls_ms: nav.secureConnectionStart
+            ? Math.max(0, nav.connectEnd - nav.secureConnectionStart)
+            : 0,
+          ttfb_ms: Math.max(0, nav.responseStart - nav.requestStart),
+          download_ms: Math.max(0, nav.responseEnd - nav.responseStart),
+          dom_ms: nav.domContentLoadedEventEnd || 0,
+          load_ms: nav.loadEventEnd || 0,
+        });
+      }
+      window.addEventListener?.("load", () => {
+        const complete = performance.getEntriesByType?.("navigation")?.[0];
+        if (!complete) return;
+        record("navigation", complete.loadEventEnd || clock(), 0, "none", "", {
+          dns_ms: Math.max(
+            0,
+            complete.domainLookupEnd - complete.domainLookupStart,
+          ),
+          connect_ms: Math.max(0, complete.connectEnd - complete.connectStart),
+          tls_ms: complete.secureConnectionStart
+            ? Math.max(0, complete.connectEnd - complete.secureConnectionStart)
+            : 0,
+          ttfb_ms: Math.max(0, complete.responseStart - complete.requestStart),
+          download_ms: Math.max(0, complete.responseEnd - complete.responseStart),
+          dom_ms: complete.domContentLoadedEventEnd || 0,
+          load_ms: complete.loadEventEnd || clock(),
+        });
+        void flushLogs();
+      });
+      window.diobotSdkReady = () => {
+        record("sdk_ready", clock());
+        void flushLogs();
+      };
+      if (app()) record("sdk_ready", clock());
+      window.addEventListener?.("pagehide", () => {
+        void flushLogs();
+      });
+      document.addEventListener?.("visibilitychange", () => {
+        if (document.visibilityState === "hidden") void flushLogs();
+      });
+      el("send-logs").onclick = () => {
+        void flushLogs();
+      };
+      let rules = [];
+      let revision;
+      let busy = false;
+      let dirty = false;
+      let paused = false;
+      let saveTimer;
+      let lastOperation = "GET";
+      function notice(text, error = false, operation = lastOperation) {
+        el("status").textContent = text;
+        el("save-state").textContent = text;
+        if (error) {
+          el("error-title").textContent = operation === "PUT"
+            ? "修改尚未确认生效"
+            : "加载失败";
+          el("error-text").textContent = text;
+          el("error-notice").hidden = false;
+        } else el("error-notice").hidden = true;
+      }
+      async function exchange(method, body) {
+        const started = clock();
+        let status = 0, requestId = "", errorType = "none", serverMs;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 12000);
+        try {
+          if (!initData) {
+            throw new Error("请从 Telegram 群内 /settings 的 Web 设置入口打开。");
+          }
+          const response = await fetch("/api/settings", {
+            method,
+            cache: "no-store",
+            signal: controller.signal,
+            headers: {
+              Authorization: "Telegram " + initData,
+              ...(body ? { "Content-Type": "application/json" } : {}),
+            },
+            ...(body ? { body: JSON.stringify(body) } : {}),
+          });
+          status = response.status;
+          requestId = response.headers.get("X-Request-ID") || "";
+          const server = response.headers.get("Server-Timing")?.match(
+            /settings;dur=([\d.]+)/,
+          );
+          if (server) serverMs = Number(server[1]);
+          const text = await response.text();
+          let result;
+          try {
+            result = JSON.parse(text);
+          } catch {
+            errorType = "format";
+            throw new Error(`服务连接异常（HTTP ${status}），请重试加载。`);
+          }
+          if (!response.ok) {
+            errorType = "http";
+            const error = new Error(result.error || "请求失败，请重试");
+            error.status = status;
+            throw error;
+          }
+          return result;
+        } catch (error) {
+          if (error.name === "AbortError") {
+            errorType = "timeout";
+            throw new Error("连接超时。保存超时时请先重新加载，确认是否已保存。");
+          }
+          if (error instanceof TypeError) {
+            errorType = "network";
+            throw new Error(
+              "网络连接失败，请重试；若保存时失败，请重新加载确认是否已生效。",
+            );
+          }
+          if (errorType === "none") errorType = "unknown";
+          throw error;
+        } finally {
+          clearTimeout(timer);
+          record(
+            method === "PUT" ? "settings_save" : "settings_load",
+            clock() - started,
+            status,
+            errorType,
+            requestId,
+            serverMs === undefined ? {} : { server_ms: serverMs },
+          );
+          void flushLogs();
+        }
+      }
+      function renderRules() {
+        const list = el("rules-list");
+        list.textContent = "";
+        if (!rules.length) {
+          list.textContent = "暂无规则，未命中时沿用 AI 审核设置。";
+        }
+        const make = (tag, text) => {
+          const node = document.createElement(tag);
+          if (text) node.textContent = text;
+          return node;
+        };
+        rules.forEach((rule, index) => {
+          const card = make("section");
+          card.className = "rule-card";
+          card.append(
+            make(
+              "h3",
+              `${index + 1}. ${rule.conditions.length > 1 ? "AND 规则组" : "规则"}`,
+            ),
+          );
+          const field = (title, input) => {
+            const label = make("label", title);
+            label.append(input);
+            card.append(label);
+          };
+          const name = make("input");
+          name.type = "text";
+          name.maxLength = 64;
+          name.value = rule.name;
+          name.oninput = () => {
+            rule.name = name.value;
+            changed(350);
+          };
+          field("规则名称", name);
+          const enabled = make("input");
+          enabled.type = "checkbox";
+          enabled.checked = rule.enabled;
+          enabled.onchange = () => {
+            rule.enabled = enabled.checked;
+            changed();
+          };
+          field("启用此规则", enabled);
+          const action = make("select");
+          for (
+            const [value, text] of [["ban", "黑名单：直接封禁"], [
+              "allow",
+              "白名单：直接放行",
+            ]]
+          ) {
+            const option = make("option", text);
+            option.value = value;
+            action.append(option);
+          }
+          action.value = rule.action;
+          action.onchange = () => {
+            rule.action = action.value;
+            changed();
+          };
+          field("命中动作", action);
+          const tools = make("div");
+          tools.className = "rule-tools";
+          const button = (text, handler, disabled = false) => {
+            const node = make("button", text);
+            node.type = "button";
+            node.disabled = disabled;
+            node.onclick = handler;
+            return node;
+          };
+          const move = (step) => {
+            [rules[index], rules[index + step]] = [
+              rules[index + step],
+              rules[index],
+            ];
+            renderRules();
+            changed();
+          };
+          tools.append(
+            button("上移", () => move(-1), index === 0),
+            button("下移", () => move(1), index === rules.length - 1),
+            button("删除规则", () => {
+              rules.splice(index, 1);
+              renderRules();
+              changed();
+            }),
+          );
+          card.append(tools);
+          rule.conditions.forEach((condition, ci) => {
+            const row = make("div");
+            row.className = "rule-condition";
+            row.append(make("p", `条件 ${ci + 1}（全部条件均须满足）`));
+            const target = make("select");
+            for (
+              const [value, text] of [["message", "消息内容"], [
+                "username",
+                "用户名（不含 @）",
+              ], ["bio", "bio / 简介"]]
+            ) {
+              const option = make("option", text);
+              option.value = value;
+              target.append(option);
+            }
+            target.value = condition.field;
+            target.onchange = () => {
+              condition.field = target.value;
+              changed();
+            };
+            const targetLabel = make("label", "匹配位置");
+            targetLabel.append(target);
+            row.append(targetLabel);
+            const pattern = make("input");
+            pattern.type = "text";
+            pattern.autocapitalize = "off";
+            pattern.autocomplete = "off";
+            pattern.spellcheck = false;
+            pattern.maxLength = 256;
+            pattern.value = condition.pattern;
+            pattern.placeholder = String.raw`例如 t\.me/|进群`;
+            pattern.oninput = () => {
+              condition.pattern = pattern.value;
+              changed(350);
+            };
+            const patternLabel = make("label", "正则表达式");
+            patternLabel.append(pattern);
+            row.append(patternLabel);
+            const flags = make("input");
+            flags.type = "text";
+            flags.autocapitalize = "off";
+            flags.autocomplete = "off";
+            flags.spellcheck = false;
+            flags.value = condition.flags;
+            flags.placeholder = "iu";
+            flags.maxLength = 4;
+            flags.oninput = () => {
+              condition.flags = flags.value;
+              changed(350);
+            };
+            const flagLabel = make(
+              "label",
+              "标志（i 忽略大小写，m 多行，s 跨行，u Unicode）",
+            );
+            flagLabel.append(flags);
+            row.append(flagLabel);
+            row.append(button("删除条件", () => {
+              rule.conditions.splice(ci, 1);
+              renderRules();
+              changed();
+            }, rule.conditions.length === 1));
+            card.append(row);
+          });
+          card.append(button("增加 AND 条件", () => {
+            rule.conditions.push({
+              field: "message",
+              pattern: "(?!)",
+              flags: "iu",
+            });
+            renderRules();
+            changed();
+          }, rule.conditions.length >= 8));
+          list.append(card);
+        });
+      }
+      el("rules-list").onchange = (event) => event.stopPropagation();
+      el("add-rule").onclick = () => {
+        if (rules.length >= 32) {
+          notice("最多32条规则或规则组", true, "PUT");
+          return;
+        }
+        rules.push({
+          id: uuid(),
+          name: "新规则",
+          enabled: false,
+          action: "ban",
+          conditions: [{ field: "message", pattern: "(?!)", flags: "iu" }],
+        });
+        renderRules();
+        changed();
+      };
+      function fill(result) {
+        revision = result.settings.revision;
+        rules = JSON.parse(JSON.stringify(result.settings.rules || []));
+        renderRules();
+        el("identity").textContent =
+          `${result.chat.title}\n群 ID：${result.chat.id} · 用户 ID：${result.userId}`;
+        el("identity").style.whiteSpace = "pre-wrap";
+        for (const key of keys) {
+          el(key).checked = result.settings[key] ?? key === "uploadAvatar";
+        }
+        el("moderation").value = result.settings.moderation;
+        el("threshold").value = Math.round(result.settings.aiThreshold * 1000) / 10;
+        el("limits").textContent =
+          `服务配置：全局每日 AI 调用上限 ${result.limits.dailyRequests} 次；样本保留 ${result.limits.reviewDays} 天，每群最多 ${result.limits.reviewPerChat} 条。`;
+        el("settings-form").hidden = false;
+      }
+      function payload() {
+        const threshold = Number(el("threshold").value);
+        if (
+          !el("threshold").value || !Number.isFinite(threshold) || threshold < 50 ||
+          threshold > 100
+        ) throw new Error("处理阈值须为50%至100%，当前输入尚未保存。");
+        for (const [index, rule] of rules.entries()) {
+          for (const condition of rule.conditions) {
+            if (
+              !condition.pattern || condition.pattern.length > 256 ||
+              !/^[imsu]*$/.test(condition.flags) ||
+              new Set(condition.flags).size !== condition.flags.length
+            ) {
+              throw new Error(`第${index + 1}条规则表达式或标志无效，修改尚未保存`);
+            }
+            try {
+              new RegExp(condition.pattern, condition.flags);
+            } catch {
+              throw new Error(`第${index + 1}条规则正则语法无效，修改尚未保存`);
+            }
+          }
+        }
+        const body = {
+          rules: JSON.parse(JSON.stringify(rules)),
+          revision,
+          moderation: el("moderation").value,
+          aiThreshold: threshold / 100,
+        };
+        for (const key of keys) body[key] = el(key).checked;
+        return body;
+      }
+      async function load() {
+        if (busy) return;
+        busy = true;
+        paused = false;
+        lastOperation = "GET";
+        clearTimeout(saveTimer);
+        el("fields").disabled = true;
+        el("load-again").hidden = true;
+        notice("正在加载…");
+        try {
+          fill(await exchange("GET"));
+          dirty = false;
+          notice("已加载，修改后自动保存。");
+        } catch (error) {
+          notice(error.message || "加载失败，请重试", true, "GET");
+          el("load-again").hidden = !el("settings-form").hidden;
+        } finally {
+          busy = false;
+          el("fields").disabled = false;
+        }
+      }
+      async function save() {
+        clearTimeout(saveTimer);
+        if (busy || paused || revision === undefined || !dirty) return;
+        busy = true;
+        lastOperation = "PUT";
+        try {
+          while (dirty && !paused) {
+            const body = payload();
+            dirty = false;
+            notice("正在保存…");
+            const result = await exchange("PUT", body);
+            revision = result.settings.revision;
+            if (!dirty) notice("已保存，立即生效。");
+          }
+        } catch (error) {
+          dirty = true;
+          paused = error.status === 409 || error.status === 401 ||
+            error.status === 403;
+          notice(error.message || "保存失败，修改尚未确认生效", true, "PUT");
+        } finally {
+          busy = false;
+        }
+      }
+      function changed(delay = 0) {
+        dirty = true;
+        if (paused) return;
+        notice("有修改，正在准备保存…");
+        clearTimeout(saveTimer);
+        if (delay) {
+          saveTimer = setTimeout(() => {
+            void save();
+          }, delay);
+        } else void save();
+      }
+      el("settings-form").onchange = () => changed();
+      el("threshold").oninput = () => changed(250);
+      el("settings-form").onsubmit = (event) => {
+        event.preventDefault();
+        if (paused) {
+          notice("请先重新加载最新设置，再修改保存。", true, "PUT");
+          return;
+        }
+        dirty = true;
+        void save();
+      };
+      el("error-retry").onclick = () => {
+        if (lastOperation === "GET") void load();
+        else if (paused) void load();
+        else {
+          dirty = true;
+          void save();
+        }
+      };
+      el("reload").onclick =
+        el("load-again").onclick =
+        el("error-reload").onclick =
+          () => {
+            void load();
+          };
+      void load();
+    } else {
+      const message = el("message");
+      const retry = el("retry");
+      let widget;
+      retry.onclick = () => {
+        retry.hidden = true;
+        turnstile.reset(widget);
+      };
+      window.onTurnstile = () => {
+        widget = turnstile.render("#challenge", {
+          sitekey: "__SITE_KEY__",
+          action: "join",
+          cData: start,
+          callback: async (token) => {
+            try {
+              const response = await fetch("/verify", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: "Telegram " + initData,
+                },
+                body: JSON.stringify({ token }),
+              });
+              const result = await response.json();
+              message.textContent = result.success
+                ? "验证通过，正在处理，请返回群组查看。"
+                : result.error;
+              if (result.success) setTimeout(() => app()?.close(), 1200);
+              else retry.hidden = false;
+            } catch {
+              message.textContent = "网络异常，请重试。";
+              retry.hidden = false;
+            }
+          },
+          "expired-callback": () => {
+            message.textContent = "验证码已过期，请重试。";
+            retry.hidden = false;
+          },
+          "error-callback": () => {
+            message.textContent = "验证服务暂时不可用，请重试。";
+            retry.hidden = false;
+          },
+        });
+      };
+      if (!initData) {
+        message.textContent =
+          "请从 Telegram 中的专属验证链接或群内 /settings 打开本页面。";
+      } else {
+        const script = document.createElement("script");
+        script.src =
+          "https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstile&render=explicit";
+        script.async = true;
+        script.onerror = () => {
+          message.textContent = "验证服务暂时不可用，请重新打开页面。";
+        };
+        document.head.appendChild(script);
+      }
+    }
+    </script>
   </body>
 </html>

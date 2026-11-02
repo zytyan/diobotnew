@@ -26,7 +26,16 @@ if (Deno.args.includes("--version")) {
     // Initialize first: no server/worker is left running if the token is invalid.
     await bot.init();
     await bot.api.setMyCommands([
-      { command: "settings", description: "配置本群功能", is_ephemeral: true },
+      {
+        command: "settings",
+        description: "本群 Web 设置与日志",
+        is_ephemeral: true,
+      },
+      {
+        command: "inline_settings",
+        description: "按钮设置（网页不可用时）",
+        is_ephemeral: true,
+      },
       {
         command: "check",
         description: "回复成员消息，检查 AI 判断",
@@ -45,7 +54,10 @@ if (Deno.args.includes("--version")) {
     ], { scope: { type: "all_chat_administrators" } });
     const server = Deno.serve(
       { hostname: config.hostname, port: config.port },
-      createHandler(config, store, page),
+      createHandler(config, store, page, fetch, {
+        api: bot.api,
+        botId: bot.botInfo.id,
+      }),
     );
     const runner = run(bot, {
       runner: {

@@ -12,8 +12,8 @@ interface Helpers {
 }
 const names: Record<string, string> = {
   normal: "正常",
-  advertisement: "广告",
-  scam: "诈骗/非法资金推广",
+  advertisement: "垃圾广告（含诈骗）",
+  scam: "垃圾广告（含诈骗）",
   uncertain: "不确定",
 };
 const paragraph = (text: string): InputRichBlock => ({
@@ -69,8 +69,10 @@ export function createReview(
       );
       const options: RichMessageButton[] = [
         button("正常/误判", `rev:${ctx.from.id}:${sample.id}:normal`),
-        button("广告", `rev:${ctx.from.id}:${sample.id}:advertisement`),
-        button("诈骗", `rev:${ctx.from.id}:${sample.id}:scam`),
+        button(
+          "垃圾广告（含诈骗）",
+          `rev:${ctx.from.id}:${sample.id}:advertisement`,
+        ),
         button("不确定", `rev:${ctx.from.id}:${sample.id}:uncertain`),
       ];
       if (sample.avatar_hash) {

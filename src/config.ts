@@ -2,6 +2,7 @@ export interface Config {
   token: string;
   environment: "prod" | "test";
   apiRoot: string;
+  localFileRoot?: string;
   hostname: string;
   port: number;
   dbPath: string;
@@ -13,7 +14,7 @@ export interface Config {
   cfAccount: string;
   cfToken: string;
   cfModel: string;
-  moderationMode: "off" | "observe" | "delete";
+  moderationMode: "off" | "observe" | "delete" | "mute" | "ban";
   aiDailyLimit: number;
   aiThreshold: number;
   reviewDays: number;
@@ -36,7 +37,7 @@ export function loadConfig(env = Deno.env.toObject()): Config {
   const moderationMode = env.MODERATION_MODE ?? "off";
   const port = Number(env.PORT ?? "8532");
   const aiDailyLimit = Number(env.AI_DAILY_LIMIT ?? "1000");
-  const aiThreshold = Number(env.AI_CONFIDENCE_THRESHOLD ?? "0.98");
+  const aiThreshold = Number(env.AI_CONFIDENCE_THRESHOLD ?? "0.80");
   if (!Number.isFinite(aiThreshold) || aiThreshold < 0.5 || aiThreshold > 1) {
     throw new Error("AI_CONFIDENCE_THRESHOLD 必须在 0.5 到 1 之间");
   }
@@ -53,7 +54,7 @@ export function loadConfig(env = Deno.env.toObject()): Config {
   if (environment !== "prod" && environment !== "test") {
     throw new Error("TELEGRAM_ENV 必须是 prod 或 test");
   }
-  if (!["off", "observe", "delete"].includes(moderationMode)) {
+  if (!["off", "observe", "delete", "mute", "ban"].includes(moderationMode)) {
     throw new Error("MODERATION_MODE 无效");
   }
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -80,10 +81,23 @@ export function loadConfig(env = Deno.env.toObject()): Config {
   if (moderationMode !== "off" && (!env.CF_ACCOUNT_ID || !env.CF_API_TOKEN)) {
     throw new Error("开启 AI 审核需要 CF_ACCOUNT_ID 和 CF_API_TOKEN");
   }
+  const localFileRoot = env.LOCAL_BOT_API_FILE_ROOT ?? "";
+  if (localFileRoot) {
+    const endpoint = new URL(env.API_ROOT ?? "https://api.telegram.org");
+    if (
+      !["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname) ||
+      !localFileRoot.startsWith("/") || localFileRoot.includes("\0")
+    ) {
+      throw new Error(
+        "本地 Bot API 文件目录仅可用于回环接口，且必须是绝对路径",
+      );
+    }
+  }
   return {
     token: env.BOT_TOKEN,
     environment,
     apiRoot: env.API_ROOT ?? "https://api.telegram.org",
+    localFileRoot,
     hostname: env.HOST ?? "127.0.0.1",
     port,
     dbPath: env.DB_PATH ?? "data/diobot.sqlite",

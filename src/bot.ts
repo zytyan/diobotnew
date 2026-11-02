@@ -1,8 +1,11 @@
+import { messageEvidence } from "./message_evidence.ts";
+import { messageContent } from "./message_content.ts";
+import { matchRules } from "./rules.ts";
 import { Bot, GrammyError } from "grammy";
-import type { ChatPermissions, Message, User } from "grammy/types";
+import type { ChatPermissions, User } from "grammy/types";
 import { ChatQueue } from "./queue.ts";
 import type { Config } from "./config.ts";
-import type { Store } from "./store.ts";
+import type { Join, Store } from "./store.ts";
 import { moderate } from "./moderation.ts";
 import { createCheck } from "./check.ts";
 import { createAdmin } from "./admin.ts";
@@ -158,9 +161,10 @@ export function createBot(
         await bot.api.restrictChatMember(event.chat.id, user.id, {}, {
           use_independent_chat_permissions: true,
         });
-        await ctx.reply(
+        const message = await ctx.reply(
           `${name}，请在六分钟内验证您是人类：\nhttps://t.me/${bot.botInfo.username}?startapp=${join.id}`,
         );
+        store.joinMessage(join.id, message.message_id);
       } catch (error) {
         // Keep the deadline: a failed send must not strand a restricted member.
         throw error;
@@ -183,8 +187,9 @@ export function createBot(
   bot.on(["message", "edited_message"], async (ctx) => {
     if (ctx.chat.type !== "group" && ctx.chat.type !== "supergroup") return;
     const msg = ctx.message ?? ctx.editedMessage!;
-    const kind = messageKind(msg);
-    if (!kind || !msg.from) return;
+    const content = messageContent(msg);
+    const kind = content.kind;
+    if (!msg.from) return;
     const eligibility = await moderationEligibility(
       bot.api,
       msg,
@@ -197,22 +202,33 @@ export function createBot(
       }
       return;
     }
-    const settings = admin.settings(ctx.chat.id);
-    const recording = settings.review !== false && config.reviewDays > 0;
-    if (settings.moderation === "off" && !recording) return;
-    const text = msg.text ?? msg.caption ?? "";
-    const context = await profiles.get(msg.from);
+    let settings = admin.settings(ctx.chat.id);
+    let recording = settings.review !== false && config.reviewDays > 0;
+    if (
+      settings.moderation === "off" && !recording &&
+      !settings.rules?.some((rule) => rule.enabled)
+    ) return;
+    const snapshotId = store.captureMessage(
+      ctx.chat.id,
+      msg.message_id,
+      await fingerprint(msg),
+      JSON.stringify(msg),
+      JSON.stringify(ctx.update),
+    );
+    if (!kind) return;
+    const text = content.text;
+    const hasRules = settings.rules?.some((rule) => rule.enabled);
+    let context = await profiles.get(
+      msg.from,
+      !hasRules && settings.uploadAvatar !== false,
+    );
     context.messageKind = kind;
-    const entities = msg.text !== undefined
-      ? msg.entities
-      : msg.caption_entities;
-    context.links = entities?.filter((e) => e.type === "text_link").map((e) =>
-      e.url
-    ).slice(0, 8);
-    const inputHash = await fingerprint({
-      text,
-      context: profileState(context),
-    });
+    context.links = content.links;
+    context.evidence = messageEvidence(
+      msg,
+      content,
+      context.profile?.bio ?? undefined,
+    );
     // Recheck after profile/file I/O: a newly promoted administrator is protected.
     const latest = await moderationEligibility(
       bot.api,
@@ -226,6 +242,58 @@ export function createBot(
       }
       return;
     }
+    settings = admin.settings(ctx.chat.id);
+    recording = settings.review !== false && config.reviewDays > 0;
+    if (settings.uploadAvatar === false) {
+      delete context.avatar;
+      if (context.profile) context.profile.avatar_status = "disabled";
+    }
+    const ruleResult = await matchRules(settings.rules ?? [], {
+      username: context.profile?.username ?? "",
+      bio: context.profile?.bio_status === "unavailable"
+        ? undefined
+        : context.profile?.bio ?? "",
+      message: text,
+    });
+    if (ruleResult.failed) {
+      store.groupEvent(ctx.chat.id, {
+        event: "rules_error",
+        message_id: msg.message_id,
+        action: "fallback_ai",
+        reason: "正则执行超时或失败",
+      });
+    }
+    if (
+      !ruleResult.rule && hasRules && settings.uploadAvatar !== false &&
+      settings.moderation !== "off" && text
+    ) {
+      context = {
+        ...await profiles.get(msg.from, true),
+        messageKind: kind,
+        links: content.links,
+      };
+      context.evidence = messageEvidence(
+        msg,
+        content,
+        context.profile?.bio ?? undefined,
+      );
+      const protectedNow = await moderationEligibility(
+        bot.api,
+        msg,
+        bot.botInfo.id,
+        config.owners,
+      );
+      if (!protectedNow.allowed) {
+        if (protectedNow.protectedUser) {
+          store.forgetReviewSender(ctx.chat.id, protectedNow.protectedUser);
+        }
+        return;
+      }
+    }
+    const inputHash = await fingerprint({
+      text,
+      context: profileState(context),
+    });
     const sample = recording
       ? store.recordReview({
         chat: ctx.chat.id,
@@ -240,7 +308,74 @@ export function createBot(
         mode: settings.moderation,
       }, config)
       : undefined;
-    if (settings.moderation === "off" || !text) return;
+    store.snapshotContext(
+      snapshotId,
+      JSON.stringify(profileState(context)),
+      sample,
+    );
+    const recordResult = (action: string, result?: unknown) => {
+      store.reviewResult(sample, action, result);
+      store.snapshotResult(snapshotId, action, result);
+      store.groupEvent(ctx.chat.id, {
+        event: "moderation",
+        snapshot_id: snapshotId,
+        action,
+        message_id: msg.message_id,
+        sender_id: msg.from!.id,
+        text: text.slice(0, 500),
+        ...(result ? { result } : {}),
+      });
+    };
+    if (ruleResult.rule) {
+      const member = await ctx.getChatMember(msg.from.id);
+      if (["administrator", "creator"].includes(member.status)) {
+        store.forgetReviewSender(ctx.chat.id, msg.from.id);
+        return;
+      }
+      if (admin.settings(ctx.chat.id).revision !== settings.revision) {
+        recordResult("settings_changed");
+        return;
+      }
+      const rule = ruleResult.rule;
+      const verdict = {
+        label: rule.action === "allow" ? "normal" : "advertisement",
+        certainty: "high",
+        reason: `规则：${rule.name || rule.id}`,
+        model: "local-regex",
+        rule_id: rule.id,
+      };
+      if (rule.action === "allow") {
+        recordResult("rule_allowed", verdict);
+        return;
+      }
+      let deleted = true;
+      try {
+        await ctx.deleteMessage();
+      } catch {
+        deleted = false;
+      }
+      try {
+        await bot.api.banChatMember(ctx.chat.id, msg.from.id, {
+          until_date: 0,
+        });
+        recordResult(
+          deleted ? "rule_banned" : "rule_banned_delete_failed",
+          verdict,
+        );
+      } catch {
+        recordResult("rule_ban_failed", verdict);
+      }
+      return;
+    }
+    if (admin.settings(ctx.chat.id).revision !== settings.revision) {
+      recordResult("settings_changed");
+      return;
+    }
+    if (
+      settings.moderation === "off" ||
+      (!text && !context.evidence?.contacts.length &&
+        !context.evidence?.replies.length)
+    ) return;
     try {
       const verdict = await moderate(
         config,
@@ -252,11 +387,10 @@ export function createBot(
         context,
       );
       if (!verdict) {
-        store.reviewResult(sample, "quota_skipped");
+        recordResult("quota_skipped");
         return;
       }
-      store.reviewResult(
-        sample,
+      recordResult(
         settings.moderation === "observe" ? "observed" : "kept",
         verdict,
       );
@@ -271,19 +405,46 @@ export function createBot(
         }),
       );
       if (
-        settings.moderation === "delete" && verdict.certainty === "high" &&
-        ["advertisement", "scam"].includes(verdict.label)
+        ["delete", "mute", "ban"].includes(settings.moderation) &&
+        verdict.certainty === "high" && verdict.label === "advertisement"
       ) {
         const member = await ctx.getChatMember(msg.from.id);
         if (["administrator", "creator"].includes(member.status)) {
           store.forgetReviewSender(ctx.chat.id, msg.from.id);
           return;
         }
+        if (admin.settings(ctx.chat.id).revision !== settings.revision) {
+          recordResult("settings_changed");
+          return;
+        }
         await ctx.deleteMessage();
-        store.reviewResult(sample, "deleted");
+        recordResult("deleted");
+        if (settings.moderation === "ban") {
+          try {
+            await bot.api.banChatMember(ctx.chat.id, msg.from.id, {
+              until_date: 0,
+            });
+            recordResult("banned");
+          } catch {
+            recordResult("deleted_ban_failed");
+            console.error("广告已删除，封禁失败");
+          }
+        }
+        if (settings.moderation === "mute") {
+          try {
+            await bot.api.restrictChatMember(ctx.chat.id, msg.from.id, {}, {
+              use_independent_chat_permissions: true,
+              until_date: 0,
+            });
+            recordResult("muted");
+          } catch {
+            recordResult("deleted_mute_failed");
+            console.error("广告已删除，禁言失败");
+          }
+        }
       }
     } catch (error) {
-      store.reviewResult(sample, "provider_error");
+      recordResult("provider_error");
       console.error(
         "审核未完成，保留消息",
         error instanceof Error ? error.name : "unknown error",
@@ -302,6 +463,7 @@ export function createBot(
 
   async function sweep() {
     store.pruneReview(config);
+    store.pruneRawMessages();
     for (const item of store.active()) {
       await queue.run(item.chat_id, () => processJoin(item.id));
     }
@@ -317,6 +479,10 @@ export function createBot(
       if (join.expires > Date.now()) return;
       store.state(join.id, "failed");
       join = store.get(join.id)!;
+    }
+    if (join.state === "done") {
+      await cleanupJoinMessage(join);
+      return;
     }
     if (join.state !== "verified" && join.state !== "failed") return;
     try {
@@ -343,7 +509,8 @@ export function createBot(
     } catch (error) {
       // Permanent permission/invalid-chat errors cannot succeed by retrying forever.
       if (
-        error instanceof GrammyError && [400, 403].includes(error.error_code)
+        error instanceof GrammyError && [400, 403].includes(error.error_code) &&
+        store.get(id)?.state !== "done"
       ) store.state(join.id, "rejected");
       console.error(
         JSON.stringify({
@@ -354,6 +521,28 @@ export function createBot(
         }),
       );
     }
+    const completed = store.get(id);
+    if (completed?.state === "done") await cleanupJoinMessage(completed);
+  }
+  async function cleanupJoinMessage(join: Join) {
+    if (join.kind !== "direct" || join.message_id === null) return;
+    try {
+      await bot.api.deleteMessage(join.chat_id, join.message_id);
+      store.joinMessage(join.id, null);
+    } catch (error) {
+      // Retry transient failures without restoring permissions or welcoming twice.
+      if (
+        error instanceof GrammyError && [400, 403].includes(error.error_code)
+      ) {
+        store.joinMessage(join.id, null);
+      }
+      console.error(JSON.stringify({
+        event: "join_message_delete_failed",
+        chat: join.chat_id,
+        message: join.message_id,
+        error: safeError(error),
+      }));
+    }
   }
   return { bot, sweep };
 }
@@ -363,18 +552,4 @@ function safeError(error: unknown): string {
   }
   // Network exception messages may contain Bot API URLs, including tokens.
   return error instanceof Error ? error.name : "UnknownError";
-}
-
-function messageKind(message: Message): string | undefined {
-  if (message.text !== undefined) return "text";
-  if (message.photo) return "photo";
-  if (message.video) return "video";
-  if (message.animation) return "animation";
-  if (message.sticker) return "sticker";
-  if (message.document) return "document";
-  if (message.voice) return "voice";
-  if (message.audio) return "audio";
-  if (message.video_note) return "video_note";
-  if (message.poll) return "poll";
-  return undefined;
 }

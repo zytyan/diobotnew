@@ -1,14 +1,16 @@
+import type { MessageEvidence } from "./message_evidence.ts";
 import type { Api } from "grammy";
 import type { PhotoSize, User } from "grammy/types";
 import { Buffer } from "node:buffer";
 import type { Config } from "./config.ts";
 
 export interface SenderProfile {
+  is_bot?: boolean;
   display_name: string;
   username: string | null;
   bio: string | null;
   bio_status: "available" | "empty" | "unavailable";
-  avatar_status: "available" | "none_or_private" | "unavailable";
+  avatar_status: "available" | "none_or_private" | "unavailable" | "disabled";
 }
 export interface AvatarImage {
   hash: string;
@@ -17,6 +19,7 @@ export interface AvatarImage {
   base64: string;
 }
 export interface ModerationContext {
+  evidence?: MessageEvidence;
   profile?: SenderProfile;
   avatar?: AvatarImage;
   messageKind?: string;
@@ -26,6 +29,7 @@ export function profileState(context?: ModerationContext) {
   if (!context) return null;
   return {
     sender: context.profile ?? null,
+    evidence: context.evidence ?? null,
     message_kind: context.messageKind ?? "text",
     links: context.links?.slice(0, 8).map((link) => link.slice(0, 512)) ?? [],
     avatar: context.avatar
@@ -50,35 +54,40 @@ interface CachedProfile {
   avatar_status: SenderProfile["avatar_status"];
 }
 export class Profiles {
-  private cache = new Map<number, CachedProfile>();
-  private pending = new Map<number, Promise<CachedProfile>>();
+  private cache = new Map<string, CachedProfile>();
+  private pending = new Map<string, Promise<CachedProfile>>();
   constructor(
     private api: Pick<Api, "getChat" | "getUserProfilePhotos" | "getFile">,
-    private config: Pick<Config, "apiRoot" | "token" | "environment">,
+    private config: Pick<
+      Config,
+      "apiRoot" | "token" | "environment" | "localFileRoot"
+    >,
     private request: typeof fetch = fetch,
     private now: () => number = Date.now,
   ) {}
-  async get(user: User): Promise<ModerationContext> {
-    let cached = this.cache.get(user.id);
+  async get(user: User, includeAvatar = true): Promise<ModerationContext> {
+    const key = `${user.id}:${includeAvatar}`;
+    let cached = this.cache.get(key);
     if (!cached || cached.until <= this.now()) {
-      let loading = this.pending.get(user.id);
+      let loading = this.pending.get(key);
       if (!loading) {
-        loading = this.load(user.id);
-        this.pending.set(user.id, loading);
+        loading = this.load(user.id, includeAvatar);
+        this.pending.set(key, loading);
       }
       try {
         cached = await loading;
       } finally {
-        if (this.pending.get(user.id) === loading) this.pending.delete(user.id);
+        if (this.pending.get(key) === loading) this.pending.delete(key);
       }
-      this.cache.delete(user.id);
-      this.cache.set(user.id, cached);
+      this.cache.delete(key);
+      this.cache.set(key, cached);
       while (this.cache.size > 128) {
         this.cache.delete(this.cache.keys().next().value!);
       }
     }
     return {
       profile: {
+        is_bot: user.is_bot,
         display_name: [user.first_name, user.last_name].filter(Boolean).join(
           " ",
         ).slice(0, 256),
@@ -90,12 +99,19 @@ export class Profiles {
     };
   }
   invalidate(user: number) {
-    this.cache.delete(user);
+    this.cache.delete(`${user}:true`);
+    this.cache.delete(`${user}:false`);
   }
-  private async load(user: number): Promise<CachedProfile> {
+  private async load(
+    user: number,
+    includeAvatar: boolean,
+  ): Promise<CachedProfile> {
+    const other = this.cache.get(`${user}:${!includeAvatar}`);
     const [bio, photo] = await Promise.allSettled([
-      this.bio(user),
-      this.avatar(user),
+      other && other.until > this.now()
+        ? Promise.resolve(other.bio)
+        : this.bio(user),
+      includeAvatar ? this.avatar(user) : Promise.resolve(undefined),
     ]);
     const avatar = photo.status === "fulfilled" ? photo.value : undefined;
     return {
@@ -104,7 +120,9 @@ export class Profiles {
         ? bio.value
         : { bio: null, bio_status: "unavailable" },
       ...(avatar ? { avatar } : {}),
-      avatar_status: photo.status === "rejected"
+      avatar_status: !includeAvatar
+        ? "disabled"
+        : photo.status === "rejected"
         ? "unavailable"
         : avatar
         ? "available"
@@ -144,24 +162,54 @@ export class Profiles {
     if (
       !file.file_path || (file.file_size && file.file_size > maxAvatarBytes)
     ) throw new Error("Profile photo unavailable");
-    if (
-      file.file_path.startsWith("/") ||
-      file.file_path.split("/").some((p) => p === "..")
-    ) throw new Error("Unsupported profile file path");
-    const url = `${
-      this.config.apiRoot.replace(/\/$/, "")
-    }/file/bot${this.config.token}/${
-      this.config.environment === "test" ? "test/" : ""
-    }${file.file_path}`;
-    const response = await this.request(url, {
-      signal: AbortSignal.timeout(8000),
-      redirect: "error",
-    });
-    if (!response.ok) {
-      await response.body?.cancel();
-      throw new Error("Profile download unavailable");
+    if (file.file_path.split("/").some((part) => part === "..")) {
+      throw new Error("Unsupported profile file path");
     }
-    const reader = response.body?.getReader();
+    let body: ReadableStream<Uint8Array> | null;
+    if (file.file_path.startsWith("/")) {
+      const host = new URL(this.config.apiRoot).hostname;
+      if (
+        !this.config.localFileRoot ||
+        !["127.0.0.1", "localhost", "[::1]"].includes(host)
+      ) {
+        throw new Error("Local profile file access disabled");
+      }
+      const root = (await Deno.realPath(this.config.localFileRoot)).replace(
+        /\/$/,
+        "",
+      );
+      const path = await Deno.realPath(file.file_path);
+      if (!path.startsWith(root + "/")) {
+        throw new Error("Profile file outside configured directory");
+      }
+      const local = await Deno.open(path, { read: true });
+      try {
+        const info = await local.stat();
+        if (!info.isFile || info.size > maxAvatarBytes) {
+          throw new Error("Profile photo too large or invalid");
+        }
+        body = local.readable;
+      } catch (error) {
+        local.close();
+        throw error;
+      }
+    } else {
+      const url = `${
+        this.config.apiRoot.replace(/\/$/, "")
+      }/file/bot${this.config.token}/${
+        this.config.environment === "test" ? "test/" : ""
+      }${file.file_path}`;
+      const response = await this.request(url, {
+        signal: AbortSignal.timeout(8000),
+        redirect: "error",
+      });
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw new Error("Profile download unavailable");
+      }
+      body = response.body;
+    }
+    const reader = body?.getReader();
     if (!reader) throw new Error("Empty profile photo");
     const chunks: Uint8Array[] = [];
     let size = 0;

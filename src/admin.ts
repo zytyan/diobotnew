@@ -1,3 +1,4 @@
+import { groupSettings } from "./settings.ts";
 import { Bot, type Context, GrammyError } from "grammy";
 import { createReview } from "./review.ts";
 import type {
@@ -36,14 +37,7 @@ const labels: Record<SettingKey, string> = {
 };
 export function createAdmin(bot: Bot, config: Config, store: Store) {
   function settings(chat: number): GroupSettings {
-    return store.settings(chat, {
-      verification: !!config.siteKey && !config.publicChats.has(chat),
-      moderation: config.publicChats.has(chat) ? config.moderationMode : "off",
-      welcome: true,
-      kicked: true,
-      leave: true,
-      tree: true,
-    });
+    return groupSettings(config, store, chat);
   }
   async function isAdmin(chat: number, user: number, restrict = false) {
     const member = await bot.api.getChatMember(chat, user);
@@ -101,6 +95,8 @@ export function createAdmin(bot: Bot, config: Config, store: Store) {
           off: "关闭",
           observe: "仅观察",
           delete: "自动删除",
+          mute: "删消息并禁言",
+          ban: "删消息并封禁",
         }[current.moderation]
         : current[key]
         ? "开启"
@@ -115,14 +111,52 @@ export function createAdmin(bot: Bot, config: Config, store: Store) {
       );
     }
     blocks.push(
+      row({
+        text: "打开 Web 设置",
+        url: `https://t.me/${bot.botInfo.username}?startapp=settings_${chat}`,
+      }),
+    );
+    blocks.push(
       paragraph(
-        "点击切换，立即保存。AI 审核依次切换：关闭 → 仅观察 → 自动删除。没有发言检查。",
+        `本群处理阈值：${
+          ((current.aiThreshold ?? config.aiThreshold) * 100).toFixed(1)
+        }%，可在 Web 设置中修改。`,
+      ),
+    );
+    blocks.push(
+      paragraph(
+        "点击切换，立即保存。AI 审核依次切换：关闭 → 仅观察 → 自动删除 → 删消息并禁言（留在群内） → 删消息并封禁（移出群并禁止再加入）。没有发言检查。",
       ),
     );
     return { blocks, skip_entity_detection: true };
   }
   createReview(bot, config, store, { panel, isAdmin });
-  bot.command("settings", async (ctx) => {
+  bot.command(["settings", "setttings"], async (ctx) => {
+    if (!["group", "supergroup"].includes(ctx.chat.type) || !ctx.from) return;
+    if (!await isAdmin(ctx.chat.id, ctx.from.id)) {
+      await panel(ctx, {
+        blocks: [paragraph("只有当前群管理员可以配置本群。")],
+      });
+      return;
+    }
+    await panel(ctx, {
+      blocks: [
+        paragraph(
+          "通过 Web 管理本群设置或查看日志。网页不可用时使用 /inline_settings。",
+        ),
+        row({
+          text: "Web 设置",
+          url:
+            `https://t.me/${bot.botInfo.username}?startapp=settings_${ctx.chat.id}`,
+        }, {
+          text: "本群日志",
+          url:
+            `https://t.me/${bot.botInfo.username}?startapp=logs_${ctx.chat.id}`,
+        }),
+      ],
+    });
+  });
+  bot.command("inline_settings", async (ctx) => {
     if (!["group", "supergroup"].includes(ctx.chat.type) || !ctx.from) return;
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) {
       await panel(ctx, {
@@ -190,7 +224,13 @@ export function createAdmin(bot: Bot, config: Config, store: Store) {
       }
       const field = key as SettingKey;
       const value = field === "moderation"
-        ? ({ off: "observe", observe: "delete", delete: "off" } as const)[
+        ? ({
+          off: "observe",
+          observe: "delete",
+          delete: "mute",
+          mute: "ban",
+          ban: "off",
+        } as const)[
           current.moderation
         ]
         : !current[field];
@@ -225,7 +265,15 @@ export function createAdmin(bot: Bot, config: Config, store: Store) {
         );
         return;
       }
-      store.updateSetting(ctx.chat.id, field, value, Number(revision));
+      if (store.updateSetting(ctx.chat.id, field, value, Number(revision))) {
+        store.groupEvent(ctx.chat.id, {
+          event: "settings_saved",
+          source: "inline",
+          actor_id: ctx.from.id,
+          field,
+          revision: Number(revision) + 1,
+        });
+      }
       await panel(ctx, menu(ctx.chat.id, ctx.from.id, "已保存。"));
       return;
     }

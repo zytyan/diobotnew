@@ -257,3 +257,32 @@ Deno.test("验证服务故障不消耗失败次数，过期申请不会调用 Tu
     store.close();
   }
 });
+
+Deno.test("只缓存不含身份的静态页面，ETag支持304；认证接口始终no-store", async () => {
+  const store = new Store(":memory:");
+  try {
+    const handler = createHandler(config(), store, "public __SITE_KEY__");
+    const page = await handler(new Request("http://localhost/"));
+    assert(
+      page.status === 200 &&
+        page.headers.get("Cache-Control")!.includes("max-age=300"),
+    );
+    const etag = page.headers.get("ETag")!;
+    assert(etag && (await page.text()) === "public test-key");
+    const reused = await handler(
+      new Request("http://localhost/", { headers: { "If-None-Match": etag } }),
+    );
+    assert(reused.status === 304 && (await reused.text()) === "");
+    const api = await handler(
+      new Request("http://localhost/verify", {
+        method: "POST",
+        headers: { "If-None-Match": etag },
+      }),
+    );
+    assert(
+      api.status === 401 && api.headers.get("Cache-Control") === "no-store",
+    );
+  } finally {
+    store.close();
+  }
+});

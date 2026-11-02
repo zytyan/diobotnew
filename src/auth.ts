@@ -13,11 +13,11 @@ async function hmac(
     await crypto.subtle.sign("HMAC", imported, new TextEncoder().encode(value)),
   );
 }
-export async function telegramAuth(
+export async function telegramIdentity(
   data: string,
   token: string,
   now = Date.now(),
-): Promise<{ user: number; session: string }> {
+): Promise<{ user: number; start: string }> {
   const params = new URLSearchParams(data);
   const hash = params.get("hash") ?? "";
   if (!/^[a-f0-9]{64}$/.test(hash)) throw new Error("无效签名");
@@ -44,9 +44,20 @@ export async function telegramAuth(
     date > now / 1000 + 30
   ) throw new Error("身份信息已过期，请重新打开");
   const user = JSON.parse(params.get("user") ?? "{}").id;
-  const session = params.get("start_param") ?? "";
+  const start = params.get("start_param") ?? "";
   if (
-    !Number.isSafeInteger(user) || user <= 0 || !/^[a-f0-9]{32}$/.test(session)
+    !Number.isSafeInteger(user) || user <= 0 ||
+    !/^[A-Za-z0-9_-]{0,512}$/.test(start)
   ) throw new Error("无效用户或申请");
-  return { user, session };
+  return { user, start };
+}
+
+export async function telegramAuth(
+  data: string,
+  token: string,
+  now = Date.now(),
+) {
+  const auth = await telegramIdentity(data, token, now);
+  if (!/^[a-f0-9]{32}$/.test(auth.start)) throw new Error("无效入群申请");
+  return { user: auth.user, session: auth.start };
 }

@@ -85,6 +85,7 @@ Deno.test("真实 handler：普通申请发私信，验证成功由后台审批�
     await sweep();
     assert(calls.some((c) => c.method === "approveChatJoinRequest"));
     assert(store.get(row.id)?.state === "done");
+    assert(!calls.some((c) => c.method === "deleteMessage"));
     const expired = store.create(-2, 43, "request", {}, Date.now() - 400_000);
     await sweep();
     assert(
@@ -165,4 +166,72 @@ Deno.test("群内后台任务和更新按序执行，不阻塞其他群且错误
     return Promise.resolve();
   });
   assert(events.at(-1) === "recovered");
+});
+
+Deno.test("群内验证链接成功后删除，临时删除失败可重试且不重复恢复权限", async () => {
+  const { bot, sweep, store, calls } = setup();
+  let failDelete = true;
+  bot.api.config.use((previous, method, payload, signal) => {
+    if (method === "getChat") {
+      return Promise.resolve({
+        ok: true,
+        result: {
+          id: -1,
+          type: "supergroup",
+          title: "验证群",
+          permissions: { can_send_messages: true },
+        },
+      }) as ReturnType<typeof previous<typeof method>>;
+    }
+    if (method === "deleteMessage" && failDelete) {
+      failDelete = false;
+      throw new Error("temporary network failure");
+    }
+    return previous(method, payload, signal);
+  });
+  try {
+    await bot.init();
+    const member = { id: 42, is_bot: false, first_name: "User" };
+    await bot.handleUpdate({
+      update_id: 10,
+      chat_member: {
+        chat: { id: -1, type: "supergroup", title: "验证群" },
+        from: member,
+        date: 1,
+        old_chat_member: { status: "left", user: member },
+        new_chat_member: { status: "member", user: member },
+        invite_link: {
+          invite_link: "https://t.me/+test",
+          creator: user,
+          creates_join_request: false,
+          is_primary: false,
+          is_revoked: false,
+        },
+      },
+    });
+    const join = store.active()[0];
+    assert(join.message_id === 123);
+    await sweep();
+    assert(!calls.some((c) => c.method === "deleteMessage"));
+    store.resolve(join.id, 42, true);
+    await sweep();
+    assert(store.get(join.id)?.state === "done");
+    assert(store.active().some((j) => j.id === join.id));
+    const restored = calls.filter((c) =>
+      c.method === "restrictChatMember"
+    ).length;
+    await sweep();
+    assert(store.get(join.id)?.message_id === null);
+    assert(!store.active().some((j) => j.id === join.id));
+    assert(
+      calls.filter((c) => c.method === "restrictChatMember").length ===
+        restored,
+    );
+    const deletion = calls.find((c) => c.method === "deleteMessage");
+    assert(
+      deletion?.payload.chat_id === -1 && deletion.payload.message_id === 123,
+    );
+  } finally {
+    store.close();
+  }
 });

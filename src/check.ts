@@ -1,3 +1,7 @@
+import { messageEvidence } from "./message_evidence.ts";
+import type { Message } from "grammy/types";
+import { messageContent } from "./message_content.ts";
+import { matchRules } from "./rules.ts";
 import type { Bot, Context } from "grammy";
 import type { InputRichMessage } from "grammy/types";
 import type { Config } from "./config.ts";
@@ -7,14 +11,15 @@ import { moderate } from "./moderation.ts";
 import { moderationEligibility } from "./eligibility.ts";
 const statusNames: Record<string, string> = {
   available: "可见",
+  disabled: "本群已关闭头像上传",
   empty: "为空",
   unavailable: "不可见",
   none_or_private: "无头像或不可见",
 };
 const names: Record<string, string> = {
   normal: "正常",
-  advertisement: "广告",
-  scam: "诈骗/非法资金推广",
+  advertisement: "垃圾广告（含诈骗）",
+  scam: "垃圾广告（含诈骗）",
   uncertain: "不确定",
 };
 export function createCheck(
@@ -42,7 +47,7 @@ export function createCheck(
       await reply("只有本群管理员可以检查 AI 判断。");
       return;
     }
-    const target = ctx.message?.reply_to_message;
+    let target: Message | undefined = ctx.message?.reply_to_message;
     if (!target || target.chat.id !== ctx.chat.id) {
       await reply(
         "请回复一条普通成员消息，再使用 /check。只检查判断，不执行删除；管理员、匿名及关联频道消息不上传。",
@@ -62,21 +67,55 @@ export function createCheck(
       await reply(`已跳过，未上传。原因：${eligible.reason}。`);
       return;
     }
-    const text = target.text ?? target.caption;
-    if (!text?.trim() || !target.from) {
+    const savedRaw = store.latestRawMessage(ctx.chat.id, target.message_id);
+    if (savedRaw) {
+      const saved = JSON.parse(savedRaw.message_json) as Message;
+      if (
+        saved.from?.id === target.from?.id && saved.text === target.text &&
+        saved.caption === target.caption && saved.edit_date === target.edit_date
+      ) {
+        target = saved;
+        const result = savedRaw.result_json
+          ? JSON.parse(savedRaw.result_json)
+          : undefined;
+        if (result?.model === "local-regex" && result.rule_id) {
+          const actions: Record<string, string> = {
+            rule_allowed: "保留消息（直接放行）",
+            rule_banned: "删除消息并封禁成员",
+            rule_banned_delete_failed: "已封禁成员，消息删除失败",
+            rule_ban_failed: "封禁失败",
+          };
+          if (actions[savedRaw.action]) {
+            await reply(
+              `已记录的正则匹配：${result.reason}\n规则 ID：${result.rule_id}\n处理结果：${
+                actions[savedRaw.action]
+              }\n未调用 AI。本次仅检查，未执行处罚。`,
+            );
+            return;
+          }
+        }
+      }
+    }
+    const content = messageContent(target);
+    const text = content.text;
+    if (!content.kind || !target.from) {
       await reply("该消息没有可审核的文字或媒体说明。");
       return;
     }
-    if (!config.cfAccount || !config.cfToken) {
-      await reply("服务器尚未配置 Cloudflare AI。");
-      return;
-    }
     try {
-      const context = await profiles.get(target.from);
-      context.messageKind = target.text !== undefined ? "text" : "caption";
-      context.links = (target.entities ?? target.caption_entities)?.flatMap(
-        (e) => e.type === "text_link" ? [e.url] : [],
-      ).slice(0, 8);
+      const rules = store.rules(ctx.chat.id);
+      const hasRules = rules.some((rule) => rule.enabled);
+      const context = await profiles.get(
+        target.from,
+        !hasRules && store.avatarEnabled(ctx.chat.id),
+      );
+      context.messageKind = content.kind;
+      context.links = content.links;
+      context.evidence = messageEvidence(
+        target,
+        content,
+        context.profile?.bio ?? undefined,
+      );
       const latest = await moderationEligibility(
         bot.api,
         target,
@@ -89,6 +128,52 @@ export function createCheck(
         }
         await reply(`已跳过，未上传。原因：${latest.reason}。`);
         return;
+      }
+      const local = await matchRules(rules, {
+        username: context.profile?.username ?? "",
+        bio: context.profile?.bio_status === "unavailable"
+          ? undefined
+          : context.profile?.bio ?? "",
+        message: text,
+      });
+      if (local.rule) {
+        await reply(
+          `命中规则：${local.rule.name || local.rule.id}\n动作：${
+            local.rule.action === "allow" ? "直接放行" : "直接封禁"
+          }\n组内条件全部满足。未调用 AI。本次仅检查，未执行处罚。`,
+        );
+        return;
+      }
+      if (
+        !text && !context.evidence.contacts.length &&
+        !context.evidence.replies.length
+      ) {
+        await reply(
+          "没有可审核的文字内容，且未命中自定义规则。图片本身不进行识图。",
+        );
+        return;
+      }
+      if (!config.cfAccount || !config.cfToken) {
+        await reply("服务器尚未配置 Cloudflare AI。");
+        return;
+      }
+      if (hasRules && store.avatarEnabled(ctx.chat.id)) {
+        const withAvatar = await profiles.get(target.from, true);
+        context.profile = withAvatar.profile;
+        context.avatar = withAvatar.avatar;
+        const latest = await moderationEligibility(
+          bot.api,
+          target,
+          bot.botInfo.id,
+          config.owners,
+        );
+        if (!latest.allowed) {
+          if (latest.protectedUser) {
+            store.forgetReviewSender(ctx.chat.id, latest.protectedUser);
+          }
+          await reply(`已跳过，未上传。原因：${latest.reason}。`);
+          return;
+        }
       }
       const verdict = await moderate(
         config,
@@ -112,7 +197,8 @@ export function createCheck(
         `分类：${names[verdict.label]}\n置信级别：${
           verdict.certainty === "high" ? "达到处理阈值" : "低于处理阈值"
         }（阈值 ${
-          (config.aiThreshold * 100).toFixed(1)
+          ((store.groupThreshold(ctx.chat.id) ?? config.aiThreshold) * 100)
+            .toFixed(1)
         }%）\n${probabilities}\n模型结果：${verdict.reason}\n消息：${
           text.slice(0, 400)
         }\n显示名：${context.profile?.display_name}\n用户名：${
@@ -122,7 +208,7 @@ export function createCheck(
           statusNames[context.profile?.bio_status ?? "unavailable"]
         }\n头像：${
           statusNames[context.profile?.avatar_status ?? "unavailable"]
-        }\n当前群模式：${helpersMode()}。本次仅检查，未删除消息。模型概率不代表实际正确率。`,
+        }\n回复上下文：${context.evidence.replies.length} 项；当前消息联系人：${context.evidence.contacts.length} 项\n当前群模式：${helpersMode()}。本次仅检查，未删除消息。模型概率不代表实际正确率。`,
       );
     } catch {
       await reply("AI 检查暂时失败，消息保留；请稍后重试。");

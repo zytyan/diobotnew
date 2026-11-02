@@ -19,9 +19,13 @@ const defaults = {
   leave: true,
   tree: true,
 };
-function setup() {
+function setup(env: Record<string, string> = {}) {
   const store = new Store(":memory:");
-  const config = loadConfig({ BOT_TOKEN: "99:fake", TELEGRAM_ENV: "test" });
+  const config = loadConfig({
+    BOT_TOKEN: "99:fake",
+    TELEGRAM_ENV: "test",
+    ...env,
+  });
   const { bot, sweep } = createBot(config, store);
   const roles = new Map<number, ChatMember>([[1, {
     status: "creator",
@@ -121,7 +125,7 @@ Deno.test("管理员设置使用原生 ephemeral rich + button；普通成员不
             .receiver_user_id === 2
       ),
     );
-    await t.command(1, "/settings");
+    await t.command(1, "/inline_settings");
     const panel = t.calls.filter((c) => c.method === "sendRichMessage").at(-1)!;
     assert(
       (panel.payload.rich_message as { blocks: { type: string }[] }).blocks
@@ -404,5 +408,119 @@ Deno.test("/check 私密命令检查回复消息，普通成员无权调用，�
     );
   } finally {
     t.store.close();
+  }
+});
+
+Deno.test("审核设置循环包括禁言，旧广告与诈骗共用一个标注入口", async () => {
+  const t = setup({ CF_ACCOUNT_ID: "account", CF_API_TOKEN: "token" });
+  try {
+    await t.bot.init();
+    await t.command(1, "/inline_settings");
+    for (
+      const [revision, mode] of ["observe", "delete", "mute", "ban", "off"]
+        .entries()
+    ) {
+      await t.callback(1, `cfg:1:moderation:${revision}`);
+      assert(t.store.settings(-1, defaults).moderation === mode);
+    }
+    const id = t.store.recordReview({
+      chat: -1,
+      message: 1,
+      sender: 2,
+      kind: "text",
+      text: "sale",
+      profile: "{}",
+      fingerprint: "1",
+      date: 1,
+      mode: "observe",
+    }, { reviewDays: 7, reviewPerChat: 1000, reviewMax: 10000 })!;
+    await t.command(1, "/review");
+    const panel = JSON.stringify(t.calls.at(-1));
+    assert(
+      panel.includes("垃圾广告（含诈骗）") && !panel.includes(`:${id}:scam`),
+    );
+    await t.callback(1, `rev:1:${id}:scam`);
+    assert(t.store.recentReviews(-1)[0].human_label === "advertisement");
+  } finally {
+    t.store.close();
+  }
+});
+
+Deno.test("settings 仅提供Web设置与日志入口，inline_settings保留按钮回退", async () => {
+  const t = setup();
+  try {
+    await t.bot.init();
+    await t.command(1, "/settings");
+    const web = JSON.stringify(t.calls.at(-1));
+    assert(
+      web.includes("startapp=settings_-1") && web.includes("startapp=logs_-1"),
+    );
+    assert(!web.includes("cfg:1:"));
+    await t.command(1, "/inline_settings");
+    assert(JSON.stringify(t.calls.at(-1)).includes("cfg:1:"));
+    await t.command(2, "/inline_settings");
+    assert(!JSON.stringify(t.calls.at(-1)).includes("cfg:2:"));
+  } finally {
+    t.store.close();
+  }
+});
+
+Deno.test("/check 直接返回已记录的正则放行或封禁结果，不读取资料也不再执行处罚", async () => {
+  for (
+    const action of [
+      "rule_allowed",
+      "rule_banned",
+      "rule_banned_delete_failed",
+      "rule_ban_failed",
+    ]
+  ) {
+    const t = setup();
+    try {
+      await t.bot.init();
+      const target = {
+        message_id: 5,
+        chat,
+        from: user(2),
+        date: 1,
+        text: "test",
+      };
+      const id = t.store.captureMessage(
+        -1,
+        5,
+        "v1",
+        JSON.stringify(target),
+        "{}",
+      );
+      t.store.snapshotResult(id, action, {
+        model: "local-regex",
+        rule_id: "original",
+        reason: "规则：原始规则",
+      });
+      await t.bot.handleUpdate({
+        update_id: 501,
+        message: {
+          message_id: 0,
+          ephemeral_message_id: 9,
+          receiver_user: user(1),
+          chat,
+          from: user(1),
+          date: 1,
+          text: "/check",
+          entities: [{ type: "bot_command", offset: 0, length: 6 }],
+          reply_to_message: { ...target, reply_to_message: undefined },
+        },
+      });
+      const reply = JSON.stringify(t.calls.at(-1));
+      assert(reply.includes("已记录的正则匹配") && reply.includes("原始规则"));
+      assert(reply.includes("未调用 AI"));
+      assert(
+        !t.calls.some((c) =>
+          ["getChat", "getUserProfilePhotos", "deleteMessage", "banChatMember"]
+            .includes(c.method)
+        ),
+      );
+    } finally {
+      t.store.close();
+    }
   }
 });
