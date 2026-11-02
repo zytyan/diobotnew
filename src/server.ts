@@ -1,3 +1,4 @@
+import { validateRules } from "./rules.ts";
 import { telemetryHandler } from "./telemetry.ts";
 import { type SettingsDependencies, settingsHandler } from "./web_settings.ts";
 import type { Config } from "./config.ts";
@@ -15,7 +16,12 @@ export function createHandler(
 ) {
   const key = config.siteKey.replaceAll("&", "&amp;").replaceAll('"', "&quot;")
     .replaceAll("<", "&lt;").replaceAll("'", "&#39;");
-  const publicPage = page.replace("__SITE_KEY__", key);
+  // The validator is self-contained; embed its runtime JavaScript so browser and
+  // server enforce exactly the same rule schema and RegExp syntax.
+  const publicPage = page.replace("__SITE_KEY__", key).replace(
+    "/*__RULE_VALIDATOR__*/ null",
+    () => validateRules.toString(),
+  );
   let pageTag: Promise<string> | undefined;
   const telemetry = telemetryHandler(config, store);
   const settings = dependencies

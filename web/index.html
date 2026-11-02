@@ -297,7 +297,7 @@
               <input id="threshold" type="number" min="50" max="100" step="0.1" required>
             </label>
             <p
-              class="hint">阈值越低越容易触发处理。垃圾广告包含诈骗和加群引流。禁言会保留成员，由管理员解除；封禁会移出群并禁止再次加入。修改后自动保存。</p>
+              class="hint">阈值越低越容易触发处理。垃圾广告包含诈骗和加群引流。禁言会保留成员，由管理员解除；封禁会移出群并禁止再次加入。输入完成并离开输入框后自动保存。</p>
           </div>
           <div class="card">
             <h2>黑白名单正则</h2>
@@ -330,7 +330,7 @@
           <details><summary>加载耗时与诊断</summary><p id="timing-summary" class="hint"></p><p id="report-status" class="hint">耗时日志自动回传，失败会暂存并在下次连接成功时重试。</p><button id="send-logs" type="button">回传诊断日志</button></details>
           <div id="save-dock">
             <p id="save-state" role="status"
-              aria-live="polite">修改后自动保存</p>
+              aria-live="polite">输入完成并离开输入框后自动保存</p>
             <div
               class="actions"><button id="save-now" type="submit">立即保存</button><button id="reload" type="button">重新加载</button></div>
           </div>
@@ -834,7 +834,8 @@
       let busy = false;
       let dirty = false;
       let paused = false;
-      let saveTimer;
+      let saveRequested = false;
+      const validateRules = /*__RULE_VALIDATOR__*/ null;
       let lastOperation = "GET";
       function notice(text, error = false, operation = lastOperation) {
         el("status").textContent = text;
@@ -944,8 +945,9 @@
           name.value = rule.name;
           name.oninput = () => {
             rule.name = name.value;
-            changed(350);
+            draftChanged();
           };
+          name.onblur = () => changed();
           field("规则名称", name);
           const enabled = make("input");
           enabled.type = "checkbox";
@@ -1029,11 +1031,13 @@
             pattern.spellcheck = false;
             pattern.maxLength = 256;
             pattern.value = condition.pattern;
-            pattern.placeholder = String.raw`例如 t\.me/|进群`;
+            pattern.placeholder = String.raw`请输入正则表达式，例如 t\.me/|进群`;
+            pattern.required = true;
             pattern.oninput = () => {
               condition.pattern = pattern.value;
-              changed(350);
+              draftChanged();
             };
+            pattern.onblur = () => changed();
             const patternLabel = make("label", "正则表达式");
             patternLabel.append(pattern);
             row.append(patternLabel);
@@ -1047,8 +1051,9 @@
             flags.maxLength = 4;
             flags.oninput = () => {
               condition.flags = flags.value;
-              changed(350);
+              draftChanged();
             };
+            flags.onblur = () => changed();
             const flagLabel = make(
               "label",
               "标志（i 忽略大小写，m 多行，s 跨行，u Unicode）",
@@ -1065,11 +1070,11 @@
           card.append(button("增加 AND 条件", () => {
             rule.conditions.push({
               field: "message",
-              pattern: "(?!)",
+              pattern: "",
               flags: "iu",
             });
             renderRules();
-            changed();
+            draftChanged();
           }, rule.conditions.length >= 8));
           list.append(card);
         });
@@ -1085,10 +1090,10 @@
           name: "新规则",
           enabled: false,
           action: "ban",
-          conditions: [{ field: "message", pattern: "(?!)", flags: "iu" }],
+          conditions: [{ field: "message", pattern: "", flags: "iu" }],
         });
         renderRules();
-        changed();
+        draftChanged();
       };
       function fill(result) {
         revision = result.settings.revision;
@@ -1112,24 +1117,9 @@
           !el("threshold").value || !Number.isFinite(threshold) || threshold < 50 ||
           threshold > 100
         ) throw new Error("处理阈值须为50%至100%，当前输入尚未保存。");
-        for (const [index, rule] of rules.entries()) {
-          for (const condition of rule.conditions) {
-            if (
-              !condition.pattern || condition.pattern.length > 256 ||
-              !/^[imsu]*$/.test(condition.flags) ||
-              new Set(condition.flags).size !== condition.flags.length
-            ) {
-              throw new Error(`第${index + 1}条规则表达式或标志无效，修改尚未保存`);
-            }
-            try {
-              new RegExp(condition.pattern, condition.flags);
-            } catch {
-              throw new Error(`第${index + 1}条规则正则语法无效，修改尚未保存`);
-            }
-          }
-        }
+        const validRules = validateRules(rules);
         const body = {
-          rules: JSON.parse(JSON.stringify(rules)),
+          rules: validRules,
           revision,
           moderation: el("moderation").value,
           aiThreshold: threshold / 100,
@@ -1142,14 +1132,14 @@
         busy = true;
         paused = false;
         lastOperation = "GET";
-        clearTimeout(saveTimer);
+        saveRequested = false;
         el("fields").disabled = true;
         el("load-again").hidden = true;
         notice("正在加载…");
         try {
           fill(await exchange("GET"));
           dirty = false;
-          notice("已加载，修改后自动保存。");
+          notice("已加载，输入完成并离开输入框后自动保存。");
         } catch (error) {
           notice(error.message || "加载失败，请重试", true, "GET");
           el("load-again").hidden = !el("settings-form").hidden;
@@ -1159,14 +1149,14 @@
         }
       }
       async function save() {
-        clearTimeout(saveTimer);
         if (busy || paused || revision === undefined || !dirty) return;
         busy = true;
         lastOperation = "PUT";
         try {
-          while (dirty && !paused) {
+          while (dirty && saveRequested && !paused) {
             const body = payload();
             dirty = false;
+            saveRequested = false;
             notice("正在保存…");
             const result = await exchange("PUT", body);
             revision = result.settings.revision;
@@ -1181,34 +1171,38 @@
           busy = false;
         }
       }
-      function changed(delay = 0) {
+      function draftChanged() {
         dirty = true;
-        if (paused) return;
-        notice("有修改，正在准备保存…");
-        clearTimeout(saveTimer);
-        if (delay) {
-          saveTimer = setTimeout(() => {
-            void save();
-          }, delay);
-        } else void save();
+        // A response to an earlier save must not submit a field still being edited.
+        saveRequested = false;
+        if (!paused) notice("有修改，输入完成并离开输入框后保存。");
       }
-      el("settings-form").onchange = () => changed();
-      el("threshold").oninput = () => changed(250);
+      function changed() {
+        dirty = true;
+        saveRequested = true;
+        if (paused) return;
+        void save();
+      }
+      el("settings-form").onchange = (event) => {
+        // Text and number fields commit on blur, including spinner/keyboard edits.
+        if (["text", "number"].includes(event?.target?.type)) return;
+        changed();
+      };
+      el("threshold").oninput = draftChanged;
+      el("threshold").onblur = () => changed();
       el("settings-form").onsubmit = (event) => {
         event.preventDefault();
         if (paused) {
           notice("请先重新加载最新设置，再修改保存。", true, "PUT");
           return;
         }
-        dirty = true;
-        void save();
+        changed();
       };
       el("error-retry").onclick = () => {
         if (lastOperation === "GET") void load();
         else if (paused) void load();
         else {
-          dirty = true;
-          void save();
+          changed();
         }
       };
       el("reload").onclick =

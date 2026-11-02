@@ -1,3 +1,7 @@
+import { createHandler } from "../src/server.ts";
+import { loadConfig } from "../src/config.ts";
+import { Store } from "../src/store.ts";
+import { validateRules } from "../src/rules.ts";
 import { runInNewContext } from "node:vm";
 function assert(value: unknown): asserts value {
   if (!value) throw new Error("assertion failed");
@@ -5,7 +9,10 @@ function assert(value: unknown): asserts value {
 const html = Deno.readTextFileSync(
   new URL("../web/index.html", import.meta.url),
 );
-const script = html.match(/<script>\s*([\s\S]*?)<\/script>/)![1];
+const script = html.match(/<script>\s*([\s\S]*?)<\/script>/)![1].replace(
+  "/*__RULE_VALIDATOR__*/ null",
+  () => validateRules.toString(),
+);
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 class FakeElement {
   hidden = false;
@@ -27,8 +34,11 @@ class FakeElement {
   maxLength = 0;
   placeholder = "";
   onclick = () => {};
-  onchange = (_event?: { stopPropagation(): void }) => {};
+  onchange = (
+    _event?: { target?: { type: string }; stopPropagation(): void },
+  ) => {};
   oninput = () => {};
+  onblur = () => {};
   onsubmit = (_event: { preventDefault(): void }) => {};
   append(...nodes: FakeElement[]) {
     this.children.push(...nodes);
@@ -285,6 +295,15 @@ Deno.test("手机规则编辑器支持新增、AND条件及上下排序，顺序
   await tick();
   t.elements.get("add-rule")!.onclick();
   await tick();
+  assert(t.saves().length === 0);
+  for (const card of t.elements.get("rules-list")!.children) {
+    const pattern = rulePattern(card);
+    assert(pattern.value === "" && pattern.placeholder.includes("请输入"));
+    pattern.value = "test";
+    pattern.oninput();
+    pattern.onblur();
+  }
+  await tick();
   const before = JSON.parse(t.saves().at(-1)!.body!).rules;
   assert(before.length === 2 && before[0].enabled === false);
   const firstCard = t.elements.get("rules-list")!.children[0];
@@ -297,6 +316,12 @@ Deno.test("手机规则编辑器支持新增、AND条件及上下排序，顺序
   assert(reordered[0].id === before[1].id && reordered[1].id === before[0].id);
   const card = t.elements.get("rules-list")!.children[0];
   card.children.at(-1)!.onclick();
+  await tick();
+  const pattern = rulePattern(t.elements.get("rules-list")!.children[0], 1);
+  assert(pattern.value === "");
+  pattern.value = "valid";
+  pattern.oninput();
+  pattern.onblur();
   await tick();
   const grouped = JSON.parse(t.saves().at(-1)!.body!).rules;
   assert(grouped[0].conditions.length === 2);
@@ -410,4 +435,144 @@ Deno.test("分别回传脚本耗时，剥离URL查询参数，跨域受限指标
     !JSON.stringify(entries).includes("private=value") &&
       !JSON.stringify(entries).includes("#secret"),
   );
+});
+
+function rulePattern(card: FakeElement, index = 0) {
+  return card.children.filter((node) =>
+    node.className === "rule-condition"
+  )[index]
+    .children[2].children[0];
+}
+Deno.test("阈值编辑和change不保存，失焦后才保存；旧请求完成不提交仍在编辑的值", async () => {
+  const t = page();
+  t.start();
+  await tick();
+  const threshold = t.elements.get("threshold")!;
+  threshold.value = "75";
+  threshold.oninput();
+  t.elements.get("settings-form")!.onchange(
+    { target: { type: "number" }, stopPropagation() {} } as never,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert(t.saves().length === 0);
+  t.state.hold = true;
+  threshold.onblur();
+  await tick();
+  assert(t.saves().length === 1);
+  threshold.value = "78";
+  threshold.oninput();
+  t.state.release();
+  await tick();
+  assert(t.saves().length === 1);
+  threshold.onblur();
+  await tick();
+  assert(
+    t.saves().length === 2 &&
+      JSON.parse(t.saves()[1].body!).aiThreshold === .78,
+  );
+});
+Deno.test("正则草稿留空，输入不保存，失焦校验拒绝空表达式、错误语法和重复标志", async () => {
+  const t = page();
+  t.start();
+  await tick();
+  t.elements.get("add-rule")!.onclick();
+  const pattern = rulePattern(t.elements.get("rules-list")!.children[0]);
+  pattern.onblur();
+  await tick();
+  assert(t.saves().length === 0);
+  pattern.value = "[";
+  pattern.oninput();
+  pattern.onblur();
+  await tick();
+  assert(
+    t.saves().length === 0 &&
+      t.elements.get("error-text")!.textContent.includes("语法无效"),
+  );
+  pattern.value = "hello";
+  pattern.oninput();
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert(t.saves().length === 0);
+  pattern.onblur();
+  await tick();
+  assert(t.saves().length === 1);
+  const card = t.elements.get("rules-list")!.children[0];
+  const flags =
+    card.children.find((node) => node.className === "rule-condition")!
+      .children[3].children[0];
+  flags.value = "ii";
+  flags.oninput();
+  flags.onblur();
+  await tick();
+  assert(t.saves().length === 1);
+  flags.value = "i";
+  flags.oninput();
+  flags.onblur();
+  await tick();
+  assert(t.saves().length === 2);
+});
+
+Deno.test("实际页面注入服务端校验函数，客户端执行相同规则格式及正则检查", async () => {
+  const store = new Store(":memory:");
+  try {
+    const handler = createHandler(
+      loadConfig({ BOT_TOKEN: "99:fake", TELEGRAM_ENV: "test" }),
+      store,
+      html,
+    );
+    const response = await handler(new Request("https://test.example/"));
+    const page = await response.text();
+    assert(!page.includes("/*__RULE_VALIDATOR__*/ null"));
+    const source = page.match(
+      /const validateRules = ([\s\S]*?);\n\s*let lastOperation/,
+    )![1];
+    const clientValidate = runInNewContext(`(${source})`);
+    const rule = {
+      id: "test",
+      name: "规则",
+      enabled: false,
+      action: "ban",
+      conditions: [{ field: "message", pattern: "hello", flags: "iu" }],
+    };
+    const invalid = [
+      [{ ...rule, name: "x".repeat(65) }],
+      [rule, rule],
+      [{ ...rule, conditions: [] }],
+      [{
+        ...rule,
+        conditions: [{ field: "invalid", pattern: "hello", flags: "" }],
+      }],
+      ...["", "[", "x".repeat(257)].map((
+        pattern,
+      ) => [{
+        ...rule,
+        conditions: [{ field: "message", pattern, flags: "iu" }],
+      }]),
+      ...["ii", "g", "v"].map((
+        flags,
+      ) => [{
+        ...rule,
+        conditions: [{ field: "message", pattern: "hello", flags }],
+      }]),
+    ];
+    assert(
+      JSON.stringify(clientValidate([rule])) ===
+        JSON.stringify(validateRules([rule])),
+    );
+    for (const value of invalid) {
+      let clientError = "", serverError = "";
+      try {
+        clientValidate(value);
+      } catch (error) {
+        clientError = (error as Error).message;
+      }
+      try {
+        validateRules(value);
+      } catch (error) {
+        serverError = (error as Error).message;
+      }
+      assert(clientError !== "" && clientError === serverError);
+    }
+  } finally {
+    store.close();
+  }
 });
