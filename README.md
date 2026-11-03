@@ -379,3 +379,17 @@ API 下载。
 
 从官方云端迁移时先停止 bot，调用官方 `logOut`，然后切换 API
 并启动；迁移后十分钟内不能登录回官方云端。本地 API 与 Cloudflare AI 的配置独立。
+
+## GitHub 自动构建与发布
+
+提交到 `main` 或提出 PR 时运行检查、测试及 Linux x86_64 构建，成功后可下载
+Actions artifact。推送 `v*` 标签（例如 `v1.0.0`）自动创建
+Release，包含压缩包、SHA-256
+和包内源码提交记录。仓库运行配置、数据库、媒体和凭据不会进入发布包。
+
+也可在 Actions → Build and Release → Run workflow 手动运行；`release_tag`
+留空只构建，填入已存在的版本标签才发布该标签对应代码。已有 Release
+不自动覆盖，发布需要修改版本标签。无需额外配置个人令牌，发布 job
+使用仓库自动提供的 GITHUB_TOKEN。
+
+构建产物面向 Debian 13/Linux x86_64；其他架构和系统版本不作保证。
