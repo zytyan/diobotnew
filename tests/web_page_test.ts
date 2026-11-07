@@ -22,6 +22,15 @@ class FakeElement {
   hidden = false;
   scrolled = false;
   focused = false;
+  attributes = new Map<string, string>();
+  tabIndex = 0;
+  setAttribute(name: string, value: string) {
+    this.attributes.set(name, value);
+  }
+  getAttribute(name: string) {
+    return this.attributes.get(name);
+  }
+  onkeydown = (_event: { key: string; preventDefault(): void }) => {};
   listeners = new Map<
     string,
     (event: {
@@ -51,6 +60,18 @@ class FakeElement {
   }
   children: FakeElement[] = [];
   value = "";
+  selectionStart: number | null = null;
+  selectionEnd: number | null = null;
+  setRangeText(text: string, start: number, end: number) {
+    this.value = this.value.slice(0, start) + text + this.value.slice(end);
+  }
+  setSelectionRange(start: number, end: number) {
+    this.selectionStart = start;
+    this.selectionEnd = end;
+  }
+  blur() {
+    this.onblur();
+  }
   checked = false;
   disabled = false;
   className = "";
@@ -83,6 +104,8 @@ function page(
       "load-again",
       "error-notice",
       "logs",
+      "panel-rules",
+      "panel-media",
     ].includes(match[1]);
     if (match[1] === "logs-filter") element.value = "all";
     return [match[1], element] as const;
@@ -385,9 +408,7 @@ Deno.test("手机规则编辑器支持新增、AND条件及上下排序，顺序
   const before = JSON.parse(t.saves().at(-1)!.body!).rules;
   assert(before.length === 2 && before[0].enabled === false);
   const firstCard = t.elements.get("rules-list")!.children[0];
-  const tools = firstCard.children.find((node) =>
-    node.className === "rule-tools"
-  )!;
+  const tools = findNode(firstCard, "rule-tools");
   tools.children[1].onclick();
   await tick();
   const reordered = JSON.parse(t.saves().at(-1)!.body!).rules;
@@ -515,11 +536,29 @@ Deno.test("分别回传脚本耗时，剥离URL查询参数，跨域受限指标
   );
 });
 
+function findNode(root: FakeElement, className: string): FakeElement {
+  if (root.className === className) return root;
+  for (const child of root.children) {
+    const result = findNodeOrNull(child, className);
+    if (result) return result;
+  }
+  throw new Error(`Missing ${className}`);
+}
+function findNodeOrNull(
+  root: FakeElement,
+  className: string,
+): FakeElement | null {
+  if (root.className === className) return root;
+  for (const child of root.children) {
+    const result = findNodeOrNull(child, className);
+    if (result) return result;
+  }
+  return null;
+}
 function rulePattern(card: FakeElement, index = 0) {
-  return card.children.filter((node) =>
-    node.className === "rule-condition"
-  )[index]
-    .children[2].children[0];
+  const row =
+    card.children.filter((node) => node.className === "rule-condition")[index];
+  return findNode(row, "regex-input");
 }
 Deno.test("阈值编辑和change不保存，失焦后才保存；旧请求完成不提交仍在编辑的值", async () => {
   const t = page();
@@ -549,7 +588,7 @@ Deno.test("阈值编辑和change不保存，失焦后才保存；旧请求完成
       JSON.parse(t.saves()[1].body!).aiThreshold === .78,
   );
 });
-Deno.test("正则草稿留空，输入不保存，失焦校验拒绝空表达式、错误语法和重复标志", async () => {
+Deno.test("正则草稿留空，失焦校验语法，勾选标志串行保存且不产生重复标志", async () => {
   const t = page();
   t.start();
   await tick();
@@ -564,7 +603,7 @@ Deno.test("正则草稿留空，输入不保存，失焦校验拒绝空表达式
   await tick();
   assert(
     t.saves().length === 0 &&
-      t.elements.get("error-text")!.textContent.includes("语法无效"),
+      t.elements.get("save-state")!.textContent.includes("语法无效"),
   );
   pattern.value = "hello";
   pattern.oninput();
@@ -574,19 +613,22 @@ Deno.test("正则草稿留空，输入不保存，失焦校验拒绝空表达式
   await tick();
   assert(t.saves().length === 1);
   const card = t.elements.get("rules-list")!.children[0];
-  const flags =
-    card.children.find((node) => node.className === "rule-condition")!
-      .children[3].children[0];
-  flags.value = "ii";
-  flags.oninput();
-  flags.onblur();
-  await tick();
-  assert(t.saves().length === 1);
-  flags.value = "i";
-  flags.oninput();
-  flags.onblur();
+  const flags = findNode(card, "regex-flags");
+  const ignoreCase = flags.children[0].children[0];
+  ignoreCase.checked = false;
+  ignoreCase.onchange();
   await tick();
   assert(t.saves().length === 2);
+  assert(
+    JSON.parse(t.saves().at(-1)!.body!).rules[0].conditions[0].flags === "u",
+  );
+  ignoreCase.checked = true;
+  ignoreCase.onchange();
+  await tick();
+  assert(t.saves().length === 3);
+  assert(
+    JSON.parse(t.saves().at(-1)!.body!).rules[0].conditions[0].flags === "iu",
+  );
 });
 
 Deno.test("实际页面注入服务端校验函数，客户端执行相同规则格式及正则检查", async () => {
@@ -763,17 +805,47 @@ Deno.test("刷新名单期间失焦的备注排队保存，不丢失提交请求
   assert(t.state.mediaEntries[0].note === "queued");
 });
 
-Deno.test("分区导航滚动并移动焦点，保留Telegram启动凭据且不触发保存", async () => {
+Deno.test("分区切换只展示选中的页面，保留Telegram凭据和未提交草稿", async () => {
   const t = page();
   t.start();
   await tick();
   const hash = t.location.hash;
-  for (const section of ["general", "rules", "media"]) {
+  t.elements.get("threshold")!.value = "72";
+  t.elements.get("threshold")!.oninput();
+  for (const section of ["rules", "media", "general"]) {
     t.elements.get(`nav-${section}`)!.onclick();
-    const target = t.elements.get(`section-${section}`)!;
-    assert(target.scrolled && target.focused);
+    for (const key of ["general", "rules", "media"]) {
+      assert(t.elements.get(`panel-${key}`)!.hidden === (key !== section));
+      assert(
+        t.elements.get(`nav-${key}`)!.getAttribute("aria-selected") ===
+          String(key === section),
+      );
+    }
   }
   assert(t.location.hash === hash && t.saves().length === 0);
+  assert(t.elements.get("threshold")!.value === "72");
+});
+Deno.test("分区支持方向键循环选择和Home/End，焦点与可见页面一致", async () => {
+  const t = page();
+  t.start();
+  await tick();
+  let prevented = false;
+  t.elements.get("nav-general")!.onkeydown({
+    key: "ArrowLeft",
+    preventDefault() {
+      prevented = true;
+    },
+  });
+  assert(prevented && !t.elements.get("panel-media")!.hidden);
+  assert(
+    t.elements.get("nav-media")!.focused &&
+      t.elements.get("nav-media")!.tabIndex === 0,
+  );
+  t.elements.get("nav-media")!.onkeydown({ key: "Home", preventDefault() {} });
+  assert(
+    !t.elements.get("panel-general")!.hidden &&
+      t.elements.get("nav-general")!.focused,
+  );
 });
 
 Deno.test("折叠的高级设置校验失败时展开，普通字段不受影响", async () => {
@@ -782,7 +854,9 @@ Deno.test("折叠的高级设置校验失败时展开，普通字段不受影响
   await tick();
   const invalid = t.elements.get("settings-form")!.listeners.get("invalid")!;
   const details = { open: false };
-  invalid({ target: { closest: () => details } });
+  invalid({
+    target: { closest: (selector) => selector === "details" ? details : null },
+  });
   assert(details.open);
   invalid({ target: { closest: () => null } });
   assert(t.saves().length === 0);
@@ -831,4 +905,79 @@ Deno.test("重新加载前确认丢弃草稿，取消时保留输入且不发送
   t.elements.get("reload")!.onclick();
   await tick();
   assert(loads() === 2 && Number(t.elements.get("threshold")!.value) === 80);
+});
+
+Deno.test("新规则先改标题或动作时保留未完成草稿，不弹出阻断编辑的错误卡片", async () => {
+  const t = page();
+  t.start();
+  await tick();
+  t.elements.get("add-rule")!.onclick();
+  const card = t.elements.get("rules-list")!.children[0];
+  const name = findNode(card, "rule-name");
+  name.value = "我的新规则";
+  name.oninput();
+  name.onblur();
+  await tick();
+  assert(t.saves().length === 0 && t.elements.get("error-notice")!.hidden);
+  const pattern = rulePattern(card);
+  pattern.value = "hello";
+  pattern.oninput();
+  pattern.onblur();
+  await tick();
+  assert(t.saves().length === 1);
+  assert(JSON.parse(t.saves()[0].body!).rules[0].name === "我的新规则");
+});
+
+Deno.test("正则辅助键包裹选中内容、保持草稿和光标位置，完成时才保存", async () => {
+  const t = page();
+  t.start();
+  await tick();
+  t.elements.get("add-rule")!.onclick();
+  const pattern = rulePattern(t.elements.get("rules-list")!.children[0]);
+  pattern.value = "hello";
+  pattern.oninput();
+  pattern.setSelectionRange(0, 5);
+  pattern.onfocus();
+  const groupKey = t.elements.get("regex-keys")!.children.find((key) =>
+    key.getAttribute("aria-label") === "分组 ( )"
+  )!;
+  groupKey.onclick();
+  assert(pattern.value === "(hello)" && pattern.selectionStart === 6);
+  assert(
+    pattern.focused && !t.elements.get("regex-keyboard")!.hidden &&
+      t.saves().length === 0,
+  );
+  t.elements.get("regex-done")!.onclick();
+  await tick();
+  assert(t.saves().length === 1 && t.elements.get("regex-keyboard")!.hidden);
+  assert(
+    JSON.parse(t.saves()[0].body!).rules[0].conditions[0].pattern === "(hello)",
+  );
+  await new Promise((resolve) => setTimeout(resolve, 160));
+});
+
+Deno.test("正则高亮保留原始字符，区分转义、字符集与量词", async () => {
+  const t = page();
+  t.start();
+  await tick();
+  t.elements.get("add-rule")!.onclick();
+  const card = t.elements.get("rules-list")!.children[0];
+  const pattern = rulePattern(card);
+  pattern.value = String.raw`t\.me|[a-z]+`;
+  pattern.oninput();
+  const layer = findNode(card, "regex-highlight");
+  assert(
+    layer.children.map((span) => span.textContent).join("") === pattern.value,
+  );
+  assert(
+    ["rx-escape", "rx-class", "rx-quantifier"].every((token) =>
+      layer.children.some((span) => span.className === token)
+    ),
+  );
+  pattern.value = "<b>hello</b>";
+  pattern.oninput();
+  assert(
+    layer.children.map((span) => span.textContent).join("") === pattern.value,
+  );
+  assert(t.saves().length === 0);
 });

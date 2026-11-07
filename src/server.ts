@@ -98,7 +98,7 @@ export function createHandler(
       ));
       const headers = {
         "Content-Type": "text/html; charset=utf-8",
-        "Cache-Control": "public, max-age=300, stale-while-revalidate=3600",
+        "Cache-Control": "public, no-cache",
         "ETag": etag,
       };
       if (

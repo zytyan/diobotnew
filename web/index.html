@@ -14,8 +14,10 @@
       --muted: var(--tg-theme-hint-color, #64748b);
       --accent: var(--tg-theme-button-color, #3975e8);
       --on-accent: var(--tg-theme-button-text-color, #fff);
-      --line: color-mix(in srgb, var(--text) 12%, transparent);
-      --soft: color-mix(in srgb, var(--accent) 8%, var(--surface));
+      --line: #dfe5ee;
+      --line: color-mix(in srgb, var(--text) 10%, transparent);
+      --soft: #edf3ff;
+      --soft: color-mix(in srgb, var(--accent) 9%, var(--surface));
     }
     * {
       box-sizing: border-box;
@@ -24,10 +26,10 @@
       scroll-padding-top: 84px;
     }
     body {
-      max-width: 680px;
+      max-width: 620px;
       margin: auto;
-      padding: max(24px, env(safe-area-inset-top)) max(16px,
-        env(safe-area-inset-right)) max(32px, env(safe-area-inset-bottom)) max(16px,
+      padding: max(16px, env(safe-area-inset-top)) max(16px,
+        env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px,
         env(safe-area-inset-left));
       font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       color: var(--text);
@@ -42,7 +44,7 @@
       margin: 0;
     }
     h1 {
-      font-size: 27px;
+      font-size: 28px;
       line-height: 1.3;
       letter-spacing: -.7px;
     }
@@ -66,8 +68,170 @@
       margin-bottom: 8px;
     }
     .page-header {
-      padding: 4px 4px 20px;
+      padding: 4px 2px 8px;
     }
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brand-title {
+      min-width: 0;
+      flex: 1;
+    }
+    .brand-title h1 {
+      font-size: 21px;
+      line-height: 1.35;
+      letter-spacing: -.4px;
+    }
+    .brand-title .brand-word {
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 1.4px;
+    }
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      color: var(--on-accent);
+      background: var(--accent);
+      border-radius: 11px;
+    }
+    .brand-word {
+      font-size: 12px;
+      letter-spacing: 2px;
+      font-weight: 800;
+    }
+    .connection-badge {
+      margin-left: auto;
+      padding: 3px 9px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--surface);
+    }
+    .header-caption {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 7px;
+    }
+    .header-note {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 18px;
+    }
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+    .section-intro {
+      padding: 5px 4px 16px;
+    }
+    .section-intro h2 {
+      font-size: 21px;
+      margin-bottom: 4px;
+    }
+    .section-intro p {
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .card-heading {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      margin-bottom: 14px;
+    }
+    .card-heading h2 {
+      margin: 0;
+      font-size: 16px;
+    }
+    .card-heading p {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .card-icon {
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 12px;
+      color: var(--accent);
+      background: var(--soft);
+      flex-shrink: 0;
+    }
+    svg {
+      display: block;
+      width: 20px;
+      height: 20px;
+    }
+    .card-icon.violet {
+      color: #8a63d2;
+      background: color-mix(in srgb, #8a63d2 10%, var(--surface));
+    }
+    .card-icon.teal {
+      color: #218e83;
+      background: color-mix(in srgb, #218e83 10%, var(--surface));
+    }
+    .label-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .label-copy small {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--muted);
+    }
+    .switch-list > label {
+      padding-block: 13px;
+    }
+    .field-note {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 24px 12px;
+      color: var(--muted);
+      font-size: 13px;
+      border: 1px dashed var(--line);
+      border-radius: 12px;
+      margin-bottom: 14px;
+    }
+    .empty-state svg {
+      width: 32px;
+      height: 32px;
+      margin: 0 auto 10px;
+      opacity: .65;
+    }
+    .empty-state strong {
+      display: block;
+      font-size: 15px;
+      color: var(--text);
+      margin-bottom: 5px;
+    }
+    .connection-details {
+      padding: 0 6px;
+      margin-top: 20px;
+    }
+    .connection-details > summary {
+      font-size: 12px;
+      font-weight: 400;
+    }
+    .connection-details > .hint {
+      margin-bottom: 12px;
+    }
+
     .page-header .hint {
       margin-top: 10px;
     }
@@ -83,7 +247,7 @@
       background: var(--surface);
       border: 1px solid var(--line);
       border-radius: 18px;
-      padding: 20px;
+      padding: 18px;
       margin-bottom: 16px;
       box-shadow: 0 3px 14px #16264604;
     }
@@ -209,17 +373,38 @@
       position: sticky;
       top: 0;
       z-index: 5;
-      background: var(--page);
       display: flex;
-      gap: 8px;
-      overflow-x: auto;
-      padding: 8px 0 12px;
+      gap: 4px;
+      margin: 14px 0 20px;
+      padding: 5px;
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      background: var(--page);
+      box-shadow: 0 3px 12px #16264605;
     }
     .quick-nav button {
-      white-space: nowrap;
-      flex-shrink: 0;
-      background: var(--surface);
-      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      gap: 7px;
+      min-width: 0;
+      min-height: 45px;
+      padding: 9px 6px;
+      border: 0;
+      border-radius: 10px;
+      color: var(--muted);
+      background: transparent;
+      font-size: 13px;
+    }
+    .quick-nav button svg {
+      width: 17px;
+      height: 17px;
+    }
+    .quick-nav button[aria-selected="true"] {
+      color: var(--on-accent);
+      background: var(--accent);
+      box-shadow: 0 3px 8px #205ac323;
     }
     .card > .hint {
       margin: 8px 0 14px;
@@ -314,7 +499,7 @@
       display: none;
     }
     #settings {
-      padding-bottom: 160px;
+      padding-bottom: 114px;
     }
     #status {
       position: absolute;
@@ -331,27 +516,75 @@
     #save-dock {
       position: fixed;
       bottom: 0;
-      left: 12px;
-      right: 12px;
-      max-width: 648px;
+      left: 0;
+      right: 0;
+      max-width: 620px;
       z-index: 4;
       margin: 0 auto;
-      padding: 14px 16px max(14px, env(safe-area-inset-bottom));
+      padding: 12px 20px max(12px, env(safe-area-inset-bottom));
       border: 1px solid var(--line);
-      border-radius: 16px 16px 0 0;
+      border-radius: 20px 20px 0 0;
       background: var(--surface);
       box-shadow: 0 -6px 24px #1626460a;
     }
-    #save-state {
-      font-size: 13px;
-      color: var(--muted);
-      margin-bottom: 10px;
+    .save-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
     }
+    .save-copy {
+      flex: 1;
+      min-width: 0;
+    }
+    .save-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 650;
+      margin-bottom: 3px;
+    }
+    #save-state {
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--muted);
+    }
+    #save-now {
+      flex-shrink: 0;
+      min-width: 90px;
+    }
+    #reload {
+      background: transparent;
+      border: 0;
+      min-height: 36px;
+      font-size: 12px;
+      padding: 6px 0;
+    }
+    #save-dock[data-state="dirty"] .status-dot {
+      background: #d18b1c;
+    }
+    #save-dock[data-state="error"] .status-dot {
+      background: #d04444;
+    }
+    #save-dock[data-state="saving"] .status-dot {
+      animation: saving-pulse 1s ease-in-out infinite alternate;
+    }
+    @keyframes saving-pulse {
+      to {
+        opacity: .3;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #save-dock .status-dot {
+        animation: none;
+      }
+    }
+
     #save-dock .actions {
       flex-wrap: nowrap;
     }
     #save-now {
-      flex: 1;
+      flex: 0 0 auto;
       background: var(--accent);
       color: var(--on-accent);
       border-color: transparent;
@@ -471,6 +704,345 @@
         display: none;
       }
     }
+
+    .moderation-fields {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 100px;
+      gap: 12px;
+    }
+    .moderation-fields label {
+      border: 0;
+      padding: 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .moderation-fields select {
+      color: var(--text);
+    }
+    .number-suffix {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      margin-top: 8px;
+      height: 48px;
+      padding-right: 12px;
+      background: var(--page);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+    .number-suffix input {
+      margin: 0;
+      border: 0;
+      background: transparent;
+      padding-right: 0;
+      width: 100%;
+      min-height: 44px;
+      appearance: textfield;
+      -moz-appearance: textfield;
+    }
+    .number-suffix input::-webkit-inner-spin-button,
+    .number-suffix input::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .number-suffix > span {
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .number-suffix:focus-within {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .number-suffix input:focus-visible {
+      outline: 0;
+    }
+    .rules-section {
+      padding: 0;
+    }
+    .rules-section .rule-card {
+      margin: 0 0 14px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: var(--surface);
+    }
+    .rule-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .rules-section .rule-name {
+      min-width: 0;
+      flex: 1;
+      font-weight: 650;
+      border: 1px solid transparent;
+      padding: 7px 0;
+      margin: 0;
+      min-height: 40px;
+      background: transparent;
+      border-radius: 5px;
+    }
+    .rules-section .rule-name:hover,
+    .rules-section .rule-name:focus {
+      border-bottom-color: var(--accent);
+    }
+    .rule-head .rule-enable {
+      min-height: 44px;
+      padding: 0;
+    }
+    .rule-options {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .rules-section .rule-action {
+      min-width: 0;
+      width: auto;
+      flex: 1;
+      margin: 0;
+      min-height: 40px;
+      padding: 7px 24px 7px 10px;
+      font-size: 13px;
+      background: var(--page);
+    }
+    .rules-section .rule-tools {
+      flex-shrink: 0;
+      gap: 0;
+      margin: 0;
+    }
+    .rules-section .rule-tools button {
+      flex: none;
+      min-width: 36px;
+      min-height: 44px;
+      padding: 5px 7px;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 15px;
+    }
+    .rules-section .rule-tools button:last-child {
+      font-size: 12px;
+      color: #ce4a4a;
+    }
+    .rules-section .rule-condition {
+      padding: 9px 0 0;
+      margin-top: 9px;
+      border-top: 1px solid var(--line);
+    }
+    .condition-meta {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+    }
+    .rules-section .condition-target {
+      margin: 0;
+      width: 84px;
+      flex-shrink: 0;
+      padding: 7px 16px 7px 8px;
+      min-height: 40px;
+      font-size: 12px;
+      border: 0;
+      background: var(--page);
+    }
+    .regex-flags {
+      display: flex;
+      justify-content: flex-end;
+      flex: 1;
+      min-width: 0;
+      gap: 0;
+    }
+    .rules-section .flag-choice {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 3px;
+      padding: 0 4px;
+      min-height: 44px;
+      border: 0;
+      font: 12px ui-monospace, monospace;
+    }
+    .rules-section .flag-choice input {
+      appearance: auto;
+      -webkit-appearance: checkbox;
+      width: 13px;
+      height: 13px;
+      min-height: 13px;
+      margin: 0;
+      border-radius: 3px;
+      accent-color: var(--accent);
+    }
+    .rules-section .flag-choice input::before {
+      display: none;
+    }
+    .condition-meta > button {
+      flex-shrink: 0;
+      min-width: 28px;
+      min-height: 44px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 20px;
+    }
+    .regex-editor {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--page);
+    }
+    .regex-editor:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--soft);
+    }
+    .rules-section .regex-editor .regex-input,
+    .regex-highlight {
+      font: 16px/24px ui-monospace, SFMono-Regular, Consolas, monospace;
+      letter-spacing: 0;
+      padding: 10px 9px;
+      margin: 0;
+      border: 0;
+      border-radius: 0;
+      white-space: pre;
+      tab-size: 2;
+    }
+    .regex-highlight {
+      position: absolute;
+      top: 0;
+      left: 0;
+      min-height: 44px;
+      pointer-events: none;
+      color: var(--text);
+    }
+    .rules-section .regex-editor .regex-input {
+      display: block;
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      min-height: 44px;
+      color: transparent;
+      -webkit-text-fill-color: transparent;
+      caret-color: var(--text);
+      background: transparent;
+      outline: none;
+      box-shadow: none;
+    }
+    .regex-editor .regex-input::placeholder {
+      -webkit-text-fill-color: var(--muted);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .rx-escape {
+      color: #217966;
+    }
+    .rx-class {
+      color: #b36218;
+    }
+    .rx-group {
+      color: #9054bd;
+    }
+    .rx-quantifier {
+      color: #b64067;
+    }
+    .rx-anchor {
+      color: #286ac5;
+    }
+    .regex-error {
+      color: #ce4a4a;
+      font-size: 12px;
+      padding-top: 5px;
+    }
+    .rules-section .rule-card > button {
+      min-height: 40px;
+      padding: 6px 0;
+      border: 0;
+      background: transparent;
+      font-size: 12px;
+      margin-top: 3px;
+    }
+    #regex-keyboard {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      max-width: 620px;
+      margin: auto;
+      z-index: 9;
+      padding: 6px 8px;
+      border-top: 1px solid var(--line);
+      background: var(--surface);
+      box-shadow: 0 -4px 20px #0001;
+      display: flex;
+      gap: 6px;
+    }
+    .regex-keys {
+      display: grid;
+      grid-template-rows: repeat(2, 44px);
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(37px, max-content);
+      gap: 4px;
+      overflow-x: auto;
+      flex: 1;
+      min-width: 0;
+    }
+    .regex-keys button {
+      padding: 5px;
+      border-radius: 6px;
+      min-height: 44px;
+      font: 15px ui-monospace, monospace;
+    }
+    #regex-done {
+      padding: 7px;
+      flex-shrink: 0;
+      border: 0;
+      background: transparent;
+      font-size: 12px;
+    }
+    .regex-editing #save-dock {
+      visibility: hidden;
+    }
+    @media (prefers-color-scheme: dark) {
+      .rx-escape {
+        color: #66c8aa;
+      }
+      .rx-class {
+        color: #e4b46e;
+      }
+      .rx-group {
+        color: #c3a0ee;
+      }
+      .rx-quantifier {
+        color: #f190ac;
+      }
+      .rx-anchor {
+        color: #81b6fa;
+      }
+    }
+    @media (max-width: 340px) {
+      .rules-section .rule-card {
+        padding-inline: 9px;
+      }
+      .rules-section .flag-choice {
+        padding-inline: 3px;
+      }
+      .rules-section .condition-target {
+        width: 76px;
+      }
+    }
+    #panel-rules .section-intro {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 0 3px 12px;
+    }
+    #panel-rules .section-intro h2 {
+      font-size: 16px;
+      margin: 0;
+    }
+    #panel-rules .section-intro p {
+      font-size: 11px;
+    }
     </style>
   </head>
   <body>
@@ -547,104 +1119,144 @@
     </section>
     <section id="settings" hidden>
       <header class="page-header">
-        <p class="eyebrow">DIOBOT · 群管理</p>
-        <h1>群管理设置</h1>
-        <p id="identity" class="hint">正在验证 Telegram 身份与群管理员权限…</p>
+        <div
+          class="brand-row"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></span><div class="brand-title"><p class="brand-word">DIOBOT</p><h1 id="group-title">群管理</h1></div><span class="connection-badge">群设置</span></div>
       </header>
       <p id="status" role="status" aria-live="polite"></p>
       <form id="settings-form" hidden>
         <fieldset id="fields" disabled>
-          <nav class="quick-nav" aria-label="设置分区">
-            <button id="nav-general" type="button">常用设置</button>
-            <button id="nav-rules" type="button">正则规则</button>
-            <button id="nav-media" type="button">媒体黑名单</button>
+          <nav class="quick-nav" role="tablist" aria-label="设置分区">
+            <button id="nav-general" type="button" role="tab"
+              aria-controls="panel-general" aria-selected="true"
+              tabindex="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--surface)"/><circle cx="15" cy="17" r="3" fill="var(--surface)"/></svg>常用设置</button>
+            <button id="nav-rules" type="button" role="tab"
+              aria-controls="panel-rules" aria-selected="false"
+              tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5h11M9 12h11M9 19h11M3 5h1M3 12h1M3 19h1"/></svg>正则规则</button>
+            <button id="nav-media" type="button" role="tab"
+              aria-controls="panel-media" aria-selected="false"
+              tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L6 21"/></svg>媒体名单</button>
           </nav>
-          <div class="card" id="section-general" tabindex="-1">
-            <h2>广告审核</h2>
-            <label class="stacked" for="moderation">处理方式
-              <select id="moderation"><option value="off">关闭</option><option value="observe">仅观察</option><option value="delete">自动删除</option><option value="mute">删消息并禁言</option><option value="ban">删消息并封禁</option></select>
-            </label>
-            <p class="hint">禁言由管理员解除；封禁会移出成员并禁止再次加入。</p>
-            <label class="stacked" for="threshold">本群处理阈值（%）
-              <input id="threshold" type="number" min="50" max="100" step="0.1" required>
-            </label>
-            <p
-              class="hint">阈值越低，越容易触发处理。垃圾广告包含诈骗和加群引流。</p>
-          </div>
-          <div class="card">
-            <h2>群功能</h2>
-            <label
-              for="verification">入群人机验证<input id="verification" type="checkbox"></label>
-            <label
-              for="welcome">欢迎消息<input id="welcome" type="checkbox"></label>
-            <label
-              for="kicked">移出 / 封禁通知<input id="kicked" type="checkbox"></label>
-            <label
-              for="leave">离开通知<input id="leave" type="checkbox"></label>
-            <label for="tree">砍树提示<input id="tree" type="checkbox"></label>
-            <label
-              for="review">近期样本记录<input id="review" type="checkbox"></label>
-          </div>
-          <div class="card">
-            <h2>头像识别</h2>
-            <label
-              for="uploadAvatar">上传发送者头像参与审核<input id="uploadAvatar" type="checkbox"></label>
-            <p
-              class="hint">关闭后，新消息不再下载、留存或上传头像；显示名、用户名与 bio 仍参与审核。仅支持直接传图片的模型会接收头像。</p>
-          </div>
-          <div class="card" id="section-rules" tabindex="-1">
-            <h2>黑白名单正则</h2>
-            <p class="hint">按顺序匹配，首个命中直接放行或封禁；独立于 AI 开关。</p>
-            <details class="advanced"><summary>匹配顺序与规则说明</summary>
-            <p class="hint">从上到下匹配，首个命中后直接放行或封禁，不调用 AI。单条规则可含多个条件，组内条件必须全部满足（AND）。这些规则独立于 AI 开关。</p>
-            <p class="hint">可选择用户名、bio 或消息内容。用户名不含 @；不可见的 bio 不会匹配。消息包括 caption、投票、清单、文件名和隐藏链接。正则不需两侧斜线，标志支持 i/m/s/u。</p>
-            </details>
-            <div id="rules-list"></div><button id="add-rule" type="button">新增规则 / 规则组</button>
-          </div>
-          <div class="card" id="section-media" tabindex="-1">
-            <h2>图片黑名单</h2>
-            <p class="hint">独立于 AI，优先于正则白名单；仅处理后续消息。</p>
-            <label>启用图片黑名单<input id="media-image-enabled" type="checkbox"></label>
-            <label
-              class="stacked">命中动作<select id="media-image-action"><option value="observe">仅观察</option><option value="delete">删除消息</option><option value="mute">删消息并禁言</option><option value="ban">删消息并永久封禁</option></select></label>
-            <details class="advanced">
-              <summary>高级设置 · 图片相似度与匹配说明</summary>
-              <label
-                class="stacked">相似度容差（PDQ 距离，0–256）<input id="media-image-distance" type="number" min="0" max="256" step="1" required></label>
-              <label
-                class="stacked">最低指纹质量（Quality，0–100）<input id="media-image-quality" type="number" min="0" max="100" step="1" required></label>
+          <section id="panel-general" role="tabpanel"
+            aria-labelledby="nav-general">
+            <div class="card" id="section-general" tabindex="-1">
+              <div
+                class="card-heading"><span class="card-icon "><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></span><div><h2>广告审核</h2><p>处理垃圾广告与可疑消息</p></div></div>
+              <div class="moderation-fields">
+                <label class="stacked" for="moderation">处理方式
+                  <select id="moderation"><option value="off">关闭</option><option value="observe">仅观察</option><option value="delete">自动删除</option><option value="mute">删除并禁言</option><option value="ban">删除并封禁</option></select>
+                </label>
+                <label class="stacked" for="threshold">触发阈值
+                  <span class="number-suffix"><input id="threshold" type="number" inputmode="decimal" min="50" max="100" step="0.1" required><span aria-hidden="true">%</span></span>
+                </label>
+              </div>
               <p
-                class="hint">独立于 AI，优先于正则白名单。ID 和 sticker 组名精确匹配；PDQ 要求双方 Quality 达标且距离不超过门槛。默认关闭。回复媒体使用 /blacklist 添加，仅影响后续消息。</p>
-            </details>
-            <button id="media-image-refresh"
-              type="button">加载 / 刷新名单</button>
-            <div id="media-image-entries"></div>
-          </div>
-          <div class="card">
-            <h2>贴纸黑名单</h2>
-            <p class="hint">独立于 AI，优先于正则白名单；仅处理后续消息。</p>
-            <label>启用贴纸黑名单<input id="media-sticker-enabled" type="checkbox"></label>
-            <label
-              class="stacked">命中动作<select id="media-sticker-action"><option value="observe">仅观察</option><option value="delete">删除消息</option><option value="mute">删消息并禁言</option><option value="ban">删消息并永久封禁</option></select></label>
-            <details class="advanced">
-              <summary>高级设置 · 图片相似度与匹配说明</summary>
+                class="hint">阈值越低越容易触发。禁言由管理员解除，封禁禁止再次加入。</p>
+            </div>
+            <div class="card">
+              <div
+                class="card-heading"><span class="card-icon violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M21 21v-3a6 6 0 0 0-3-5"/></svg></span><div><h2>群功能</h2><p>按群需要开启，点击整行即可切换</p></div></div>
               <label
-                class="stacked">相似度容差（PDQ 距离，0–256）<input id="media-sticker-distance" type="number" min="0" max="256" step="1" required></label>
+                for="verification"><span class="label-copy">入群人机验证<small>新成员入群前完成人机验证</small></span><input id="verification" type="checkbox"></label>
               <label
-                class="stacked">最低指纹质量（Quality，0–100）<input id="media-sticker-quality" type="number" min="0" max="100" step="1" required></label>
+                for="welcome"><span class="label-copy">欢迎消息<small>向新加入的成员发送欢迎消息</small></span><input id="welcome" type="checkbox"></label>
+              <label
+                for="kicked"><span class="label-copy">移出 / 封禁通知<small>记录成员被移出或封禁的事件</small></span><input id="kicked" type="checkbox"></label>
+              <label
+                for="leave"><span class="label-copy">离开通知<small>成员主动离开时发送通知</small></span><input id="leave" type="checkbox"></label>
+              <label
+                for="tree"><span class="label-copy">砍树提示<small>显示邀请关系处理相关提示</small></span><input id="tree" type="checkbox"></label>
+              <label
+                for="review"><span class="label-copy">近期样本记录<small>留存审核样本，方便后续复核</small></span><input id="review" type="checkbox"></label>
+            </div>
+            <div class="card">
+              <div
+                class="card-heading"><span class="card-icon teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="9" r="3"/><path d="M5 18a8 8 0 0 1 14 0"/></svg></span><div><h2>头像识别</h2><p>为 AI 审核提供额外线索</p></div></div>
+              <label
+                for="uploadAvatar">上传发送者头像参与审核<input id="uploadAvatar" type="checkbox"></label>
               <p
-                class="hint">独立于 AI，优先于正则白名单。ID 和 sticker 组名精确匹配；PDQ 要求双方 Quality 达标且距离不超过门槛。默认关闭。回复媒体使用 /blacklist 添加，仅影响后续消息。</p>
-            </details>
-            <button id="media-sticker-refresh"
-              type="button">加载 / 刷新名单</button>
-            <div id="media-sticker-entries"></div>
-          </div>
-          <p id="limits" class="hint"></p>
-          <details><summary>加载耗时与诊断</summary><p id="timing-summary" class="hint"></p><p id="report-status" class="hint">耗时日志自动回传，失败会暂存并在下次连接成功时重试。</p><button id="send-logs" type="button">回传诊断日志</button></details>
-          <div id="save-dock">
-            <p id="save-state">开关即时保存；文字与数值编辑后点空白处保存</p>
-            <div
-              class="actions"><button id="save-now" type="submit">立即保存</button><button id="reload" type="button">重新加载</button></div>
+                class="hint">关闭后，新消息不再下载、留存或上传头像；显示名、用户名与 bio 仍参与审核。仅支持直接传图片的模型会接收头像。</p>
+            </div>
+          </section>
+          <section id="panel-rules" role="tabpanel" aria-labelledby="nav-rules"
+            hidden>
+            <div class="section-intro">
+              <h2>正则规则</h2>
+              <p>按顺序匹配 · 组内条件同时满足</p>
+            </div>
+            <div class="rules-section" id="section-rules" tabindex="-1">
+              <div id="rules-list"></div>
+              <button id="add-rule" type="button">＋ 添加规则</button>
+              <details class="advanced">
+                <summary>规则与标志说明</summary>
+                <p class="hint"
+                  id="regex-help">同一规则内的条件须全部满足（AND），规则从上到下匹配，首个命中后直接放行或封禁。用户名不含 @。正则无需两侧斜线；i 忽略大小写，m 多行，s 允许点号匹配换行，u Unicode。点击规则标题修改名称。</p>
+              </details>
+            </div>
+          </section>
+          <section id="panel-media" role="tabpanel" aria-labelledby="nav-media"
+            hidden>
+            <div class="section-intro">
+              <h2>媒体黑名单</h2>
+              <p>拦截已知图片和贴纸，独立于 AI 审核。</p>
+            </div>
+            <div class="card" id="section-media" tabindex="-1">
+              <div
+                class="card-heading"><span class="card-icon "><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L6 21"/></svg></span><div><h2>图片黑名单</h2><p>识别相同或相似的已知图片</p></div></div>
+              <p class="hint">独立于 AI，优先于正则白名单；仅处理后续消息。</p>
+              <label>启用图片黑名单<input id="media-image-enabled" type="checkbox"></label>
+              <label
+                class="stacked">命中动作<select id="media-image-action"><option value="observe">仅观察</option><option value="delete">删除消息</option><option value="mute">删消息并禁言</option><option value="ban">删消息并永久封禁</option></select></label>
+              <details class="advanced">
+                <summary>高级设置 · 图片相似度与匹配说明</summary>
+                <label
+                  class="stacked">相似度容差（PDQ 距离，0–256）<input id="media-image-distance" type="number" min="0" max="256" step="1" required></label>
+                <label
+                  class="stacked">最低指纹质量（Quality，0–100）<input id="media-image-quality" type="number" min="0" max="100" step="1" required></label>
+                <p
+                  class="hint">独立于 AI，优先于正则白名单。ID 和 sticker 组名精确匹配；PDQ 要求双方 Quality 达标且距离不超过门槛。默认关闭。回复媒体使用 /blacklist 添加，仅影响后续消息。</p>
+              </details>
+              <button id="media-image-refresh"
+                type="button">加载 / 刷新名单</button>
+              <div id="media-image-entries"></div>
+            </div>
+            <div class="card">
+              <div
+                class="card-heading"><span class="card-icon teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 21H7a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v6z"/><path d="M13 21v-4a4 4 0 0 1 4-4h4M8 8h.01M15 8h.01M8 12a5 5 0 0 0 4 2"/></svg></span><div><h2>贴纸黑名单</h2><p>精确匹配与相似指纹识别</p></div></div>
+              <p class="hint">独立于 AI，优先于正则白名单；仅处理后续消息。</p>
+              <label>启用贴纸黑名单<input id="media-sticker-enabled" type="checkbox"></label>
+              <label
+                class="stacked">命中动作<select id="media-sticker-action"><option value="observe">仅观察</option><option value="delete">删除消息</option><option value="mute">删消息并禁言</option><option value="ban">删消息并永久封禁</option></select></label>
+              <details class="advanced">
+                <summary>高级设置 · 图片相似度与匹配说明</summary>
+                <label
+                  class="stacked">相似度容差（PDQ 距离，0–256）<input id="media-sticker-distance" type="number" min="0" max="256" step="1" required></label>
+                <label
+                  class="stacked">最低指纹质量（Quality，0–100）<input id="media-sticker-quality" type="number" min="0" max="100" step="1" required></label>
+                <p
+                  class="hint">独立于 AI，优先于正则白名单。ID 和 sticker 组名精确匹配；PDQ 要求双方 Quality 达标且距离不超过门槛。默认关闭。回复媒体使用 /blacklist 添加，仅影响后续消息。</p>
+              </details>
+              <button id="media-sticker-refresh"
+                type="button">加载 / 刷新名单</button>
+              <div id="media-sticker-entries"></div>
+            </div>
+          </section>
+          <details class="connection-details">
+            <summary>连接与服务信息</summary>
+            <p id="identity"
+              class="hint">正在验证 Telegram 身份与群管理员权限…</p>
+            <p id="limits" class="hint"></p>
+            <button id="reload" type="button">重新加载设置</button>
+            <details><summary>加载耗时与诊断</summary><p id="timing-summary" class="hint"></p><p id="report-status" class="hint">耗时日志自动回传，失败会暂存并在下次连接成功时重试。</p><button id="send-logs" type="button">回传诊断日志</button></details>
+          </details>
+          <div id="save-dock" data-state="ready">
+            <div class="save-row">
+              <div class="save-copy">
+                <p
+                  class="save-label"><span class="status-dot" aria-hidden="true"></span>自动保存已开启</p>
+                <p id="save-state">开关即时保存，输入完成后点空白处保存</p>
+              </div>
+              <button id="save-now" type="submit">保存设置</button>
+            </div>
           </div>
         </fieldset>
       </form>
@@ -667,16 +1279,40 @@
     </section>
     <aside id="error-notice" role="alert" aria-live="assertive"
       hidden><strong id="error-title">操作失败</strong><p id="error-text"></p><div class="actions"><button id="error-retry" type="button">重试</button><button id="error-reload" type="button">重新加载</button></div></aside>
+    <div id="regex-keyboard" role="toolbar" aria-label="正则辅助输入" hidden>
+      <div id="regex-keys" class="regex-keys"></div>
+      <button id="regex-done" type="button">完成</button>
+    </div>
     <script>
     const app = () => window.Telegram?.WebApp;
     const launch = new URLSearchParams(location.hash?.slice(1) || "");
     const initData = app()?.initData || launch.get("tgWebAppData") || "";
     const el = (id) => document.getElementById(id);
-    for (const section of ["general", "rules", "media"]) {
+    const sections = ["general", "rules", "media"];
+    function selectSection(section, focus = false) {
+      for (const key of sections) {
+        const selected = key === section;
+        el(`panel-${key}`).hidden = !selected;
+        el(`nav-${key}`).setAttribute("aria-selected", String(selected));
+        el(`nav-${key}`).tabIndex = selected ? 0 : -1;
+      }
+      if (focus) el(`nav-${section}`).focus({ preventScroll: true });
+    }
+    for (const [index, section] of sections.entries()) {
       el(`nav-${section}`).onclick = () => {
-        const target = el(`section-${section}`);
-        target.scrollIntoView({ block: "start" });
-        target.focus({ preventScroll: true });
+        selectSection(section);
+        el(`nav-${section}`).scrollIntoView({ block: "nearest" });
+      };
+      el(`nav-${section}`).onkeydown = (event) => {
+        let next;
+        if (event.key === "ArrowRight") next = (index + 1) % sections.length;
+        else if (event.key === "ArrowLeft") {
+          next = (index + sections.length - 1) % sections.length;
+        } else if (event.key === "Home") next = 0;
+        else if (event.key === "End") next = sections.length - 1;
+        else return;
+        event.preventDefault();
+        selectSection(sections[next], true);
       };
     }
     const start = new URLSearchParams(initData).get("start_param") ||
@@ -1190,6 +1826,7 @@
           const container = el(`media-${kind}-entries`);
           container.textContent = "";
           const entries = mediaEntries.filter((entry) => entry.kind === kind);
+          container.className = entries.length ? "" : "empty-state";
           if (!entries.length) {
             container.textContent = mediaLoaded
               ? "暂无黑名单条目。回复媒体使用 /blacklist 添加。"
@@ -1340,6 +1977,16 @@
       function notice(text, error = false, operation = lastOperation) {
         el("status").textContent = text;
         el("save-state").textContent = text;
+        el("save-dock").setAttribute(
+          "data-state",
+          error
+            ? "error"
+            : text.includes("正在保存")
+            ? "saving"
+            : dirty
+            ? "dirty"
+            : "ready",
+        );
         if (error) {
           el("error-retry").textContent = paused ? "加载最新设置" : "重试";
           el("error-title").textContent = operation === "PUT"
@@ -1415,54 +2062,148 @@
           void flushLogs();
         }
       }
+      let activePattern = null;
+      const regexKeyboard = el("regex-keyboard");
+      function positionRegexKeyboard() {
+        const viewport = window.visualViewport;
+        const inset = viewport
+          ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+          : 0;
+        regexKeyboard.style.bottom = `${inset}px`;
+      }
+      function closeRegexKeyboard() {
+        activePattern = null;
+        regexKeyboard.hidden = true;
+        document.body?.classList.remove("regex-editing");
+      }
+      const regexKeys = [
+        ["\\", "\\", "转义"],
+        [".", ".", "任意字符"],
+        ["*", "*", "零次或多次"],
+        ["+", "+", "一次或多次"],
+        ["?", "?", "可选或非贪婪"],
+        ["|", "|", "或者"],
+        ["^", "^", "开头"],
+        ["$", "$", "结尾"],
+        ["( )", "()", "分组"],
+        ["[ ]", "[]", "字符集合"],
+        ["{ }", "{}", "次数"],
+        ["\\d", "\\d", "数字"],
+        ["\\w", "\\w", "字母数字或下划线"],
+        ["\\s", "\\s", "空白"],
+        [".*", ".*", "任意长度"],
+        ["-", "-", "范围"],
+      ];
+      for (const [label, token, description] of regexKeys) {
+        const key = document.createElement("button");
+        key.type = "button";
+        key.textContent = label;
+        key.title = description;
+        key.setAttribute("aria-label", `${description} ${label}`);
+        key.onpointerdown = (event) => event.preventDefault();
+        key.onclick = () => {
+          const input = activePattern;
+          if (!input) return;
+          const start = input.selectionStart ?? input.value.length;
+          const end = input.selectionEnd ?? start;
+          const paired = ["()", "[]", "{}"].includes(token);
+          const selected = input.value.slice(start, end);
+          const insertion = paired ? token[0] + selected + token[1] : token;
+          if (input.value.length - (end - start) + insertion.length > 256) return;
+          input.setRangeText(insertion, start, end, "end");
+          const cursor = start + (paired ? 1 + selected.length : token.length);
+          input.setSelectionRange(cursor, cursor);
+          input.focus({ preventScroll: true });
+          input.oninput();
+        };
+        el("regex-keys").append(key);
+      }
+      el("regex-done").onclick = () => {
+        activePattern?.blur();
+        closeRegexKeyboard();
+      };
+      window.visualViewport?.addEventListener("resize", positionRegexKeyboard);
+      window.visualViewport?.addEventListener("scroll", positionRegexKeyboard);
+      function highlightRegex(value, layer) {
+        layer.textContent = "";
+        let inClass = false;
+        for (let i = 0; i < value.length; i++) {
+          const span = document.createElement("span");
+          let text = value[i], type = "";
+          if (text === "\\") {
+            type = "escape";
+            if (i + 1 < value.length) text += value[++i];
+          } else if (text === "[" && !inClass) {
+            inClass = true;
+            type = "class";
+          } else if (inClass) {
+            type = "class";
+            if (text === "]") inClass = false;
+          } else if ("()|".includes(text)) type = "group";
+          else if ("*+?{}".includes(text)) type = "quantifier";
+          else if ("^$.".includes(text)) type = "anchor";
+          span.className = type ? `rx-${type}` : "";
+          span.textContent = text;
+          layer.append(span);
+        }
+      }
       function renderRules() {
+        closeRegexKeyboard();
         const list = el("rules-list");
         list.textContent = "";
+        list.className = rules.length ? "" : "empty-state";
         if (!rules.length) {
-          list.textContent = "暂无规则，未命中时沿用 AI 审核设置。";
+          list.textContent = "暂无规则。添加规则，直接放行可信内容或拦截指定广告。";
         }
-        const make = (tag, text) => {
+        const make = (tag, text, className = "") => {
           const node = document.createElement(tag);
           if (text) node.textContent = text;
+          if (className) node.className = className;
+          return node;
+        };
+        const button = (text, handler, label, disabled = false) => {
+          const node = make("button", text);
+          node.type = "button";
+          node.disabled = disabled;
+          node.title = label;
+          node.setAttribute("aria-label", label);
+          node.onclick = handler;
           return node;
         };
         rules.forEach((rule, index) => {
-          const card = make("section");
-          card.className = "rule-card";
-          card.append(
-            make(
-              "h3",
-              `${index + 1}. ${rule.conditions.length > 1 ? "AND 规则组" : "规则"}`,
-            ),
-          );
-          const field = (title, input) => {
-            const label = make("label", title);
-            label.append(input);
-            card.append(label);
-          };
-          const name = make("input");
+          const card = make("section", "", "rule-card");
+          card.setAttribute("aria-label", `规则 ${index + 1}`);
+          const head = make("div", "", "rule-head");
+          const name = make("input", "", "rule-name");
           name.type = "text";
           name.maxLength = 64;
           name.value = rule.name;
+          name.placeholder = "点击命名规则";
+          name.setAttribute("aria-label", `规则 ${index + 1} 名称，点击编辑`);
           name.oninput = () => {
             rule.name = name.value;
             draftChanged();
           };
           name.onblur = () => changed();
-          field("规则名称", name);
           const enabled = make("input");
           enabled.type = "checkbox";
           enabled.checked = rule.enabled;
+          enabled.setAttribute("aria-label", `启用规则 ${index + 1}`);
           enabled.onchange = () => {
             rule.enabled = enabled.checked;
             changed();
           };
-          field("启用此规则", enabled);
-          const action = make("select");
+          const enabledLabel = make("label", "", "rule-enable");
+          enabledLabel.append(enabled);
+          head.append(name, enabledLabel);
+          card.append(head);
+          const options = make("div", "", "rule-options");
+          const action = make("select", "", "rule-action");
+          action.setAttribute("aria-label", "命中动作");
           for (
-            const [value, text] of [["ban", "黑名单：直接封禁"], [
+            const [value, text] of [["ban", "黑名单 · 封禁"], [
               "allow",
-              "白名单：直接放行",
+              "白名单 · 放行",
             ]]
           ) {
             const option = make("option", text);
@@ -1474,16 +2215,7 @@
             rule.action = action.value;
             changed();
           };
-          field("命中动作", action);
-          const tools = make("div");
-          tools.className = "rule-tools";
-          const button = (text, handler, disabled = false) => {
-            const node = make("button", text);
-            node.type = "button";
-            node.disabled = disabled;
-            node.onclick = handler;
-            return node;
-          };
+          const tools = make("div", "", "rule-tools");
           const move = (step) => {
             [rules[index], rules[index + step]] = [
               rules[index + step],
@@ -1493,25 +2225,26 @@
             changed();
           };
           tools.append(
-            button("上移", () => move(-1), index === 0),
-            button("下移", () => move(1), index === rules.length - 1),
-            button("删除规则", () => {
+            button("↑", () => move(-1), "上移规则", index === 0),
+            button("↓", () => move(1), "下移规则", index === rules.length - 1),
+            button("删除", () => {
               rules.splice(index, 1);
               renderRules();
               changed();
-            }),
+            }, "删除规则"),
           );
-          card.append(tools);
+          options.append(action, tools);
+          card.append(options);
           rule.conditions.forEach((condition, ci) => {
-            const row = make("div");
-            row.className = "rule-condition";
-            row.append(make("p", `条件 ${ci + 1}（全部条件均须满足）`));
-            const target = make("select");
+            const row = make("div", "", "rule-condition");
+            const meta = make("div", "", "condition-meta");
+            const target = make("select", "", "condition-target");
+            target.setAttribute("aria-label", `条件 ${ci + 1} 匹配位置`);
             for (
-              const [value, text] of [["message", "消息内容"], [
-                "username",
-                "用户名（不含 @）",
-              ], ["bio", "bio / 简介"]]
+              const [value, text] of [["message", "消息"], ["username", "用户名"], [
+                "bio",
+                "简介",
+              ]]
             ) {
               const option = make("option", text);
               option.value = value;
@@ -1522,61 +2255,119 @@
               condition.field = target.value;
               changed();
             };
-            const targetLabel = make("label", "匹配位置");
-            targetLabel.append(target);
-            row.append(targetLabel);
-            const pattern = make("input");
+            meta.append(target);
+            const flags = make("div", "", "regex-flags");
+            flags.setAttribute("role", "group");
+            flags.setAttribute("aria-label", `条件 ${ci + 1} 正则标志`);
+            for (
+              const [flag, description] of [
+                ["i", "忽略大小写"],
+                ["m", "多行匹配"],
+                ["s", "点号匹配换行"],
+                ["u", "Unicode 模式"],
+              ]
+            ) {
+              const label = make("label", "", "flag-choice");
+              label.title = `${flag} · ${description}`;
+              const checkbox = make("input");
+              checkbox.type = "checkbox";
+              checkbox.checked = condition.flags.includes(flag);
+              checkbox.setAttribute("aria-label", `${flag} · ${description}`);
+              checkbox.onchange = () => {
+                const selected = new Set(condition.flags);
+                if (checkbox.checked) selected.add(flag);
+                else selected.delete(flag);
+                condition.flags = ["i", "m", "s", "u"].filter((item) =>
+                  selected.has(item)
+                ).join("");
+                highlight();
+                changed();
+              };
+              label.append(checkbox, make("span", flag));
+              flags.append(label);
+            }
+            meta.append(
+              flags,
+              button(
+                "×",
+                () => {
+                  rule.conditions.splice(ci, 1);
+                  renderRules();
+                  changed();
+                },
+                `删除条件 ${ci + 1}`,
+                rule.conditions.length === 1,
+              ),
+            );
+            const editor = make("div", "", "regex-editor");
+            const layer = make("pre", "", "regex-highlight");
+            layer.setAttribute("aria-hidden", "true");
+            const pattern = make("input", "", "regex-input");
             pattern.type = "text";
             pattern.autocapitalize = "off";
             pattern.autocomplete = "off";
             pattern.spellcheck = false;
             pattern.maxLength = 256;
             pattern.value = condition.pattern;
-            pattern.placeholder = String.raw`请输入正则表达式，例如 t\.me/|进群`;
+            pattern.placeholder = String.raw`请输入正则，如 t\.me/|进群`;
             pattern.required = true;
+            pattern.setAttribute("aria-label", `条件 ${ci + 1} 正则表达式`);
+            pattern.setAttribute("aria-describedby", "regex-help");
+            const error = make("p", "", "regex-error");
+            error.hidden = true;
+            const highlight = () => {
+              highlightRegex(pattern.value, layer);
+              layer.style.transform = `translateX(-${pattern.scrollLeft || 0}px)`;
+              let message = "";
+              if (pattern.value) {
+                try {
+                  new RegExp(pattern.value, condition.flags);
+                } catch {
+                  message = "正则语法有误，请检查括号、转义和标志。";
+                }
+              }
+              error.textContent = message;
+              error.hidden = !message;
+              pattern.setAttribute("aria-invalid", String(!!message));
+            };
             pattern.oninput = () => {
               condition.pattern = pattern.value;
+              highlight();
               draftChanged();
             };
-            pattern.onblur = () => changed();
-            const patternLabel = make("label", "正则表达式");
-            patternLabel.append(pattern);
-            row.append(patternLabel);
-            const flags = make("input");
-            flags.type = "text";
-            flags.autocapitalize = "off";
-            flags.autocomplete = "off";
-            flags.spellcheck = false;
-            flags.value = condition.flags;
-            flags.placeholder = "iu";
-            flags.maxLength = 4;
-            flags.oninput = () => {
-              condition.flags = flags.value;
-              draftChanged();
+            pattern.onscroll = () => {
+              layer.style.transform = `translateX(-${pattern.scrollLeft}px)`;
             };
-            flags.onblur = () => changed();
-            const flagLabel = make(
-              "label",
-              "标志（i 忽略大小写，m 多行，s 跨行，u Unicode）",
-            );
-            flagLabel.append(flags);
-            row.append(flagLabel);
-            row.append(button("删除条件", () => {
-              rule.conditions.splice(ci, 1);
-              renderRules();
+            pattern.onfocus = () => {
+              activePattern = pattern;
+              regexKeyboard.hidden = false;
+              document.body?.classList.add("regex-editing");
+              positionRegexKeyboard();
+              setTimeout(() => {
+                if (activePattern === pattern) {
+                  pattern.scrollIntoView({ block: "center", behavior: "smooth" });
+                }
+              }, 150);
+            };
+            pattern.onblur = () => {
+              closeRegexKeyboard();
               changed();
-            }, rule.conditions.length === 1));
+            };
+            highlight();
+            editor.append(layer, pattern);
+            row.append(meta, editor, error);
             card.append(row);
           });
-          card.append(button("增加 AND 条件", () => {
-            rule.conditions.push({
-              field: "message",
-              pattern: "",
-              flags: "iu",
-            });
-            renderRules();
-            draftChanged();
-          }, rule.conditions.length >= 8));
+          card.append(button(
+            "＋ 添加条件（AND）",
+            () => {
+              rule.conditions.push({ field: "message", pattern: "", flags: "iu" });
+              renderRules();
+              draftChanged();
+            },
+            "添加 AND 条件",
+            rule.conditions.length >= 8,
+          ));
           list.append(card);
         });
       }
@@ -1621,6 +2412,7 @@
         mediaEditing.clear();
         renderMediaEntries();
         renderRules();
+        el("group-title").textContent = result.chat.title;
         el("identity").textContent =
           `${result.chat.title}\n群 ID：${result.chat.id} · 用户 ID：${result.userId}`;
         el("identity").style.whiteSpace = "pre-wrap";
@@ -1681,7 +2473,7 @@
         try {
           fill(await exchange("GET"));
           dirty = false;
-          notice("已加载 · 开关即时保存，输入完成后点空白处保存");
+          notice("已加载 · 修改后自动保存");
         } catch (error) {
           notice(error.message || "加载失败，请重试", true, "GET");
           el("load-again").hidden = !el("settings-form").hidden;
@@ -1720,15 +2512,24 @@
         dirty = true;
         // A response to an earlier save must not submit a field still being edited.
         saveRequested = false;
-        if (!paused) notice("尚未保存 · 点空白处或「立即保存」提交修改");
+        if (!paused) notice("尚未保存 · 点空白处或「保存设置」提交修改");
       }
       function changed() {
         dirty = true;
         saveRequested = true;
         if (paused) return;
+        try {
+          validateRules(rules);
+        } catch (error) {
+          saveRequested = false;
+          notice(error.message || "请补全规则后保存");
+          return;
+        }
         void save();
       }
       el("settings-form").addEventListener?.("invalid", (event) => {
+        const panel = event.target.closest('[role="tabpanel"]');
+        if (panel) selectSection(panel.id.replace("panel-", ""));
         const details = event.target.closest("details");
         if (details) details.open = true;
       }, true);
