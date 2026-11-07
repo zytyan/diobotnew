@@ -20,6 +20,26 @@ const script = html.match(/<script>\s*([\s\S]*?)<\/script>/)![1].replace(
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 class FakeElement {
   hidden = false;
+  scrolled = false;
+  focused = false;
+  listeners = new Map<
+    string,
+    (event: {
+      target: { closest(selector: string): { open: boolean } | null };
+    }) => void
+  >();
+  scrollIntoView() {
+    this.scrolled = true;
+  }
+  focus() {
+    this.focused = true;
+  }
+  addEventListener(
+    name: string,
+    handler: typeof this.listeners extends Map<string, infer H> ? H : never,
+  ) {
+    this.listeners.set(name, handler);
+  }
   style: Record<string, string> = {};
   private text = "";
   get textContent() {
@@ -100,12 +120,14 @@ function page(
     conflict: false,
     hold: false,
     holdMediaGet: false,
+    discardConfirmed: false,
     reportFails: false,
     logsDenied: false,
     release: () => {},
   };
   const context = {
     window: {
+      confirm: () => state.discardConfirmed,
       localStorage: {
         getItem: (key: string) => storage.get(key),
         setItem: (key: string, value: string) => storage.set(key, value),
@@ -234,7 +256,16 @@ function page(
   const start = () => runInNewContext(script, context);
   const saves = () =>
     calls.filter((c) => c.url === "/api/settings" && c.method === "PUT");
-  return { elements, settings, calls, state, start, saves, storage };
+  return {
+    elements,
+    settings,
+    calls,
+    state,
+    start,
+    saves,
+    storage,
+    location: context.location,
+  };
 }
 Deno.test("无 Telegram SDK 仍可加载，修改开关立即自动保存并回传客户端耗时", async () => {
   const t = page();
@@ -730,4 +761,74 @@ Deno.test("刷新名单期间失焦的备注排队保存，不丢失提交请求
     ),
   );
   assert(t.state.mediaEntries[0].note === "queued");
+});
+
+Deno.test("分区导航滚动并移动焦点，保留Telegram启动凭据且不触发保存", async () => {
+  const t = page();
+  t.start();
+  await tick();
+  const hash = t.location.hash;
+  for (const section of ["general", "rules", "media"]) {
+    t.elements.get(`nav-${section}`)!.onclick();
+    const target = t.elements.get(`section-${section}`)!;
+    assert(target.scrolled && target.focused);
+  }
+  assert(t.location.hash === hash && t.saves().length === 0);
+});
+
+Deno.test("折叠的高级设置校验失败时展开，普通字段不受影响", async () => {
+  const t = page();
+  t.start();
+  await tick();
+  const invalid = t.elements.get("settings-form")!.listeners.get("invalid")!;
+  const details = { open: false };
+  invalid({ target: { closest: () => details } });
+  assert(details.open);
+  invalid({ target: { closest: () => null } });
+  assert(t.saves().length === 0);
+});
+
+Deno.test("媒体名单区分未加载与空名单，请求期间禁用刷新并显示进度", async () => {
+  const t = page();
+  t.start();
+  await tick();
+  assert(
+    t.elements.get("media-image-entries")!.textContent.includes("尚未加载"),
+  );
+  t.state.mediaEntries = [];
+  t.state.holdMediaGet = true;
+  t.elements.get("media-image-refresh")!.onclick();
+  await tick();
+  for (const kind of ["image", "sticker"]) {
+    const button = t.elements.get(`media-${kind}-refresh`)!;
+    assert(button.disabled && button.textContent.includes("正在加载"));
+  }
+  t.state.release();
+  await tick();
+  for (const kind of ["image", "sticker"]) {
+    assert(!t.elements.get(`media-${kind}-refresh`)!.disabled);
+    assert(
+      t.elements.get(`media-${kind}-entries`)!.textContent.includes(
+        "暂无黑名单",
+      ),
+    );
+  }
+});
+
+Deno.test("重新加载前确认丢弃草稿，取消时保留输入且不发送加载请求", async () => {
+  const t = page();
+  t.start();
+  await tick();
+  const loads = () =>
+    t.calls.filter((c) => c.url === "/api/settings" && c.method === "GET")
+      .length;
+  t.elements.get("threshold")!.value = "72";
+  t.elements.get("threshold")!.oninput();
+  t.elements.get("reload")!.onclick();
+  await tick();
+  assert(loads() === 1 && t.elements.get("threshold")!.value === "72");
+  t.state.discardConfirmed = true;
+  t.elements.get("reload")!.onclick();
+  await tick();
+  assert(loads() === 2 && Number(t.elements.get("threshold")!.value) === 80);
 });
