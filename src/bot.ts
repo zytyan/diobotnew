@@ -1,6 +1,6 @@
 import { MediaService, mediaSource } from "./media.ts";
 import { createMediaAdmin } from "./media_admin.ts";
-import { messageEvidence } from "./message_evidence.ts";
+import { guestBotCaller, messageEvidence } from "./message_evidence.ts";
 import { messageContent } from "./message_content.ts";
 import { matchRules } from "./rules.ts";
 import { Bot, GrammyError } from "grammy";
@@ -223,6 +223,41 @@ export function createBot(
     );
     if (!kind) return;
     const text = content.text;
+    const banGuestCaller = async () => {
+      const caller = guestBotCaller(msg);
+      if (!caller) return;
+      let action = "guest_caller_protected";
+      try {
+        if (caller.id !== bot.botInfo.id && !config.owners.has(caller.id)) {
+          const member = await ctx.getChatMember(caller.id);
+          if (member.status === "kicked") {
+            action = "guest_caller_already_banned";
+          } else if (
+            member.user.id === caller.id && !member.user.is_bot &&
+            ["member", "restricted", "left"].includes(member.status)
+          ) {
+            if (admin.settings(ctx.chat.id).revision !== settings.revision) {
+              action = "settings_changed";
+            } else {
+              await bot.api.banChatMember(ctx.chat.id, caller.id, {
+                until_date: 0,
+              });
+              action = "guest_caller_banned";
+            }
+          }
+        }
+      } catch {
+        action = "guest_caller_ban_failed";
+      }
+      store.groupEvent(ctx.chat.id, {
+        event: "moderation",
+        snapshot_id: snapshotId,
+        message_id: msg.message_id,
+        sender_id: msg.from!.id,
+        target_id: caller.id,
+        action,
+      });
+    };
     const source = mediaSource(msg);
     if (source && settings.media?.[source.kind].enabled) {
       try {
@@ -275,6 +310,7 @@ export function createBot(
                   deleted ? "deleted_" : "delete_failed_"
                 }${match.action}_failed`;
               }
+              if (match.action === "ban") await banGuestCaller();
             }
           }
           store.snapshotResult(snapshotId, action, match);
@@ -298,8 +334,8 @@ export function createBot(
       }
     }
     const hasRules = settings.rules?.some((rule) => rule.enabled);
-    let context = await profiles.get(
-      msg.from,
+    let context = await profiles.forMessage(
+      msg,
       !hasRules && settings.uploadAvatar !== false,
     );
     context.messageKind = kind;
@@ -348,7 +384,7 @@ export function createBot(
       settings.moderation !== "off" && text
     ) {
       context = {
-        ...await profiles.get(msg.from, true),
+        ...await profiles.forMessage(msg, true),
         messageKind: kind,
         links: content.links,
       };
@@ -445,6 +481,7 @@ export function createBot(
       } catch {
         recordResult("rule_ban_failed", verdict);
       }
+      await banGuestCaller();
       return;
     }
     if (admin.settings(ctx.chat.id).revision !== settings.revision) {
@@ -509,6 +546,7 @@ export function createBot(
             recordResult("deleted_ban_failed");
             console.error("广告已删除，封禁失败");
           }
+          await banGuestCaller();
         }
         if (settings.moderation === "mute") {
           try {

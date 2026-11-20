@@ -1,6 +1,6 @@
 import type { MessageEvidence } from "./message_evidence.ts";
 import type { Api } from "grammy";
-import type { PhotoSize, User } from "grammy/types";
+import type { Message, PhotoSize, User } from "grammy/types";
 import { Buffer } from "node:buffer";
 import type { Config } from "./config.ts";
 
@@ -10,6 +10,7 @@ export interface SenderProfile {
   username: string | null;
   bio: string | null;
   bio_status: "available" | "empty" | "unavailable";
+  bio_source?: "bot_about";
   avatar_status: "available" | "none_or_private" | "unavailable" | "disabled";
 }
 export interface AvatarImage {
@@ -47,9 +48,95 @@ export async function fingerprint(value: unknown): Promise<string> {
   return Array.from(hash, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 const maxAvatarBytes = 128 * 1024;
+type Bio = Pick<SenderProfile, "bio" | "bio_status" | "bio_source">;
+const unavailableBio = { bio: null, bio_status: "unavailable" } as const;
+
+export function messageBot(message: Message): User | undefined {
+  if (message.from?.is_bot) return message.from;
+  if (message.via_bot?.is_bot) return message.via_bot;
+}
+
+// getChat omits the short description of third-party bots.
+export async function publicBotAbout(
+  username: string | undefined,
+  request: typeof fetch,
+): Promise<Bio> {
+  if (!username || !/^[a-zA-Z0-9_]{1,32}$/.test(username)) {
+    return unavailableBio;
+  }
+  try {
+    const response = await request(`https://t.me/${username}`, {
+      signal: AbortSignal.timeout(3000),
+      redirect: "error",
+    });
+    if (!response.ok || !response.body) {
+      await response.body?.cancel();
+      return unavailableBio;
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let size = 0;
+    let page = "";
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        size += value.length;
+        if (size > 128 * 1024) {
+          await reader.cancel();
+          return unavailableBio;
+        }
+        page += decoder.decode(value, { stream: true });
+      }
+      page += decoder.decode();
+    } finally {
+      reader.releaseLock();
+    }
+    if (
+      !page.includes('class="tgme_page_extra"') ||
+      !page.toLowerCase().includes(
+        `"tg://resolve?domain=${username.toLowerCase()}"`,
+      )
+    ) {
+      return unavailableBio;
+    }
+    const description =
+      /<div class="tgme_page_description\s*">([\s\S]*?)<\/div>/.exec(page)
+        ?.[1] ?? "";
+    const entities: Record<string, string> = {
+      amp: "&",
+      lt: "<",
+      gt: ">",
+      quot: '"',
+      apos: "'",
+      nbsp: " ",
+    };
+    const bio = description.replace(/<br\s*\/?>/gi, "\n").replace(
+      /<[^>]*>/g,
+      "",
+    )
+      .replace(
+        /&(#x[\da-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi,
+        (entity, code: string) => {
+          if (!code.startsWith("#")) return entities[code.toLowerCase()];
+          const hex = code[1].toLowerCase() === "x";
+          const value = parseInt(code.slice(hex ? 2 : 1), hex ? 16 : 10);
+          return value <= 0x10ffff ? String.fromCodePoint(value) : entity;
+        },
+      ).trim().slice(0, 1024);
+    return {
+      bio,
+      bio_status: bio ? "available" : "empty",
+      bio_source: "bot_about",
+    };
+  } catch {
+    return unavailableBio;
+  }
+}
+
 interface CachedProfile {
   until: number;
-  bio: Pick<SenderProfile, "bio" | "bio_status">;
+  bio: Bio;
   avatar?: AvatarImage;
   avatar_status: SenderProfile["avatar_status"];
 }
@@ -65,13 +152,37 @@ export class Profiles {
     private request: typeof fetch = fetch,
     private now: () => number = Date.now,
   ) {}
+  async forMessage(
+    message: Message,
+    includeAvatar: boolean,
+  ): Promise<ModerationContext> {
+    const author = message.from;
+    if (!author) return {};
+    const bot = messageBot(message);
+    if (!bot || bot.id === author.id) {
+      return await this.get(author, includeAvatar);
+    }
+    const [context, via] = await Promise.all([
+      this.get(author, includeAvatar),
+      this.get(bot, false),
+    ]);
+    if (context.profile && via.profile) {
+      const { bio, bio_status } = via.profile;
+      Object.assign(context.profile, {
+        bio,
+        bio_status,
+        bio_source: "bot_about",
+      });
+    }
+    return context;
+  }
   async get(user: User, includeAvatar = true): Promise<ModerationContext> {
     const key = `${user.id}:${includeAvatar}`;
     let cached = this.cache.get(key);
     if (!cached || cached.until <= this.now()) {
       let loading = this.pending.get(key);
       if (!loading) {
-        loading = this.load(user.id, includeAvatar);
+        loading = this.load(user, includeAvatar);
         this.pending.set(key, loading);
       }
       try {
@@ -103,22 +214,20 @@ export class Profiles {
     this.cache.delete(`${user}:false`);
   }
   private async load(
-    user: number,
+    user: User,
     includeAvatar: boolean,
   ): Promise<CachedProfile> {
-    const other = this.cache.get(`${user}:${!includeAvatar}`);
+    const other = this.cache.get(`${user.id}:${!includeAvatar}`);
     const [bio, photo] = await Promise.allSettled([
       other && other.until > this.now()
         ? Promise.resolve(other.bio)
         : this.bio(user),
-      includeAvatar ? this.avatar(user) : Promise.resolve(undefined),
+      includeAvatar ? this.avatar(user.id) : Promise.resolve(undefined),
     ]);
     const avatar = photo.status === "fulfilled" ? photo.value : undefined;
     return {
       until: this.now() + 120_000,
-      bio: bio.status === "fulfilled"
-        ? bio.value
-        : { bio: null, bio_status: "unavailable" },
+      bio: bio.status === "fulfilled" ? bio.value : unavailableBio,
       ...(avatar ? { avatar } : {}),
       avatar_status: !includeAvatar
         ? "disabled"
@@ -129,9 +238,18 @@ export class Profiles {
         : "none_or_private",
     };
   }
-  private async bio(
-    user: number,
-  ): Promise<Pick<SenderProfile, "bio" | "bio_status">> {
+  private async bio(user: User): Promise<Bio> {
+    if (user.is_bot && user.username) {
+      const about = await publicBotAbout(user.username, this.request);
+      if (about.bio_status !== "unavailable") return about;
+    }
+    const bio = await this.chatBio(user.id);
+    if (user.is_bot && user.username && bio.bio_status === "empty") {
+      return unavailableBio;
+    }
+    return bio;
+  }
+  private async chatBio(user: number): Promise<Bio> {
     const chat = await this.api.getChat(user);
     if (!chat || typeof chat !== "object" || chat.type !== "private") {
       return { bio: null, bio_status: "unavailable" };

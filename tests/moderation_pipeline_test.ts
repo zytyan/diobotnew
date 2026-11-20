@@ -362,3 +362,117 @@ Deno.test("名片与跨频道回复进入真实审核链：上传联系对象但
     store.close();
   }
 });
+
+Deno.test("访客 bot 广告使用关于资料，并联动封禁 Telegram 记录的普通召唤者", async () => {
+  const config = loadConfig({
+    BOT_TOKEN: "99:fake",
+    TELEGRAM_ENV: "test",
+    CF_ACCOUNT_ID: "account",
+    CF_API_TOKEN: "token",
+    MODERATION_MODE: "ban",
+    PUBLIC_CHAT_IDS: "-1",
+  });
+  const store = new Store(":memory:");
+  const guest = {
+    id: 88,
+    is_bot: true,
+    first_name: "Guest",
+    username: "guest_bot",
+  };
+  const other = { ...user, id: 47 };
+  const targets: number[] = [];
+  const deletions: number[] = [];
+  let callerRole = "member";
+  let score = .92;
+  let aboutReads = 0;
+  const bio = "一单给500\n进群 & 咨询 https://t.me/example";
+  const request: typeof fetch = (url, init) => {
+    if (String(url) === "https://t.me/guest_bot") {
+      aboutReads++;
+      return Promise.resolve(
+        new Response(
+          '<div class="tgme_page_extra"><a href="tg://resolve?domain=guest_bot"></a>' +
+            '<div class="tgme_page_description ">一单给500<br/>进群 &amp; 咨询 https://t.me/example</div></div>',
+        ),
+      );
+    }
+    const payload = JSON.parse(String(init?.body));
+    assert(payload.state.sender.bio === bio);
+    assert(payload.state.sender.bio_source === "bot_about");
+    assert(payload.state.evidence.contacts.some(
+      (target: { username?: string }) => target.username === "example",
+    ));
+    return Promise.resolve(Response.json({
+      success: true,
+      result: {
+        answers: {
+          classification: {
+            type: "choice",
+            choice: "advertisement",
+            confidence: score,
+            probabilities: { normal: 1 - score, advertisement: score },
+          },
+        },
+      },
+    }));
+  };
+  const { bot } = createBot(config, store, { request });
+  bot.api.config.use((_prev, method, payload) => {
+    const params = payload as { user_id?: number; message_id?: number };
+    const member = params.user_id === guest.id ? guest : user;
+    if (method === "deleteMessage") deletions.push(params.message_id!);
+    if (method === "banChatMember") {
+      targets.push(params.user_id!);
+      if (params.user_id === guest.id) throw new Error("guest not in group");
+    }
+    const result = method === "getMe"
+      ? { id: 99, is_bot: true, first_name: "Bot", username: "mod_bot" }
+      : method === "getChatMember"
+      ? { status: member.id === user.id ? callerRole : "left", user: member }
+      : method === "getChat"
+      ? { id: user.id, type: "private", first_name: "Alice", bio: "personal" }
+      : method === "getUserProfilePhotos"
+      ? { total_count: 0, photos: [] }
+      : true;
+    return Promise.resolve({ ok: true, result }) as ReturnType<
+      typeof _prev<typeof method>
+    >;
+  });
+  const send = (id: number, attrs: Partial<Message>) =>
+    bot.handleUpdate({
+      update_id: id,
+      message: { ...message, message_id: id, ...attrs } as NonNullable<
+        Update["message"]
+      >,
+    });
+  const response = {
+    from: guest,
+    guest_bot_caller_user: user,
+    reply_to_message: { ...message, from: other, reply_to_message: undefined },
+  };
+  try {
+    await bot.init();
+    await send(30065, response);
+    assert(targets.join(",") === "88,42");
+    assert(
+      store.groupLogs(-1).some((row) =>
+        row.kind === "action" && row.data.action === "guest_caller_banned" &&
+        row.data.target_id === user.id
+      ),
+    );
+    callerRole = "administrator";
+    await send(30066, response);
+    assert(targets.join(",") === "88,42,88");
+    score = .68;
+    await send(30067, response);
+    assert(deletions.join(",") === "30065,30066");
+    assert(targets.join(",") === "88,42,88");
+    score = .92;
+    callerRole = "member";
+    await send(30068, { from: user, via_bot: guest });
+    assert(targets.join(",") === "88,42,88,42");
+    assert(aboutReads === 1);
+  } finally {
+    store.close();
+  }
+});

@@ -17,7 +17,7 @@ type Probabilities =
   & Record<"normal" | "advertisement", number>
   & Partial<Record<"uncertain", number>>;
 const binaryLabels = ["normal", "advertisement"] as const;
-const policyVersion = "2026-10-binary-reply-v6";
+const policyVersion = "2026-11-bot-about-v7";
 export interface Verdict {
   label: Label;
   certainty: "high" | "low";
@@ -103,8 +103,6 @@ export async function moderate(
   return verdict;
 }
 
-const instructions =
-  `${moderationInstructions}\nOnly output JSON: {"label":"normal|advertisement","certainty":"high|low","reason":"20字以内理由"}.`;
 export function buildModerationRequest(
   text: string,
   model: string,
@@ -113,6 +111,11 @@ export function buildModerationRequest(
   const multimodal = model === "@cf/cloudflare/clef-flash" ||
     model === "@cf/cloudflare/clef";
   const profile = context?.profile;
+  const instructions = moderationInstructions +
+    (profile?.is_bot || profile?.bio_source === "bot_about" ||
+        context?.evidence?.via_bot || context?.evidence?.guest_bot_response
+      ? " For bot-generated content, consider the bot's profile About in sender.bio together with the current message. A reply promising payment per task and directing users to a recruiting profile or group is advertising. Invoking a bot alone is not advertising."
+      : "");
   const state = {
     sender: profile
       ? {
@@ -121,6 +124,7 @@ export function buildModerationRequest(
         username: profile.username,
         bio: profile.bio,
         bio_status: profile.bio_status,
+        bio_source: profile.bio_source,
       }
       : null,
     message_kind: context?.messageKind ?? "text",
@@ -146,7 +150,7 @@ export function buildModerationRequest(
       questions: {
         classification: {
           type: "choice",
-          instructions: moderationInstructions,
+          instructions,
           criteria: moderationCriteria,
         },
       },
@@ -156,6 +160,8 @@ export function buildModerationRequest(
     "<",
     "\\u003c",
   ).replaceAll(">", "\\u003e");
+  const jsonInstructions =
+    `${instructions}\nOnly output JSON: {"label":"normal|advertisement","certainty":"high|low","reason":"20字以内理由"}.`;
   const options = {
     max_tokens: 160,
     temperature: 0,
@@ -168,12 +174,12 @@ export function buildModerationRequest(
       ...options,
       raw: true,
       prompt:
-        `<|im_start|>system\n${instructions}<|im_end|>\n<|im_start|>user\n${data} /no_think<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n`,
+        `<|im_start|>system\n${jsonInstructions}<|im_end|>\n<|im_start|>user\n${data} /no_think<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n`,
     };
   }
   return {
     ...options,
-    messages: [{ role: "system", content: instructions }, {
+    messages: [{ role: "system", content: jsonInstructions }, {
       role: "user",
       content: data,
     }],

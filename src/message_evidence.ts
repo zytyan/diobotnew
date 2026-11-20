@@ -33,7 +33,16 @@ export interface MessageEvidence {
   contacts: ContactTarget[];
   replies: ReplyEvidence[];
   via_bot?: ContactTarget;
+  guest_bot_response?: true;
   forwarded_from?: Record<string, unknown>;
+}
+export function guestBotCaller(message: Message): User | undefined {
+  const caller = message.guest_bot_caller_user;
+  if (
+    message.from?.is_bot && caller?.is_bot === false &&
+    !message.forward_origin && !message.sender_chat &&
+    !message.guest_bot_caller_chat
+  ) return caller;
 }
 const person = (user: User, source: string): ContactTarget => ({
   source,
@@ -240,6 +249,7 @@ export function messageEvidence(
     replies: [],
   };
   if (message.via_bot) evidence.via_bot = person(message.via_bot, "via_bot");
+  if (guestBotCaller(message)) evidence.guest_bot_response = true;
   if (message.forward_origin) {
     evidence.forwarded_from = originInfo(message.forward_origin);
   }

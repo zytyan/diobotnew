@@ -8,6 +8,7 @@ import type {
   ModerationContext,
   SenderProfile,
 } from "./profiles.ts";
+import { messageBot, publicBotAbout } from "./profiles.ts";
 import { moderationEligibility } from "./eligibility.ts";
 import { messageContent } from "./message_content.ts";
 import { messageEvidence } from "./message_evidence.ts";
@@ -42,7 +43,7 @@ export async function reanalyze(
   }
   const content = messageContent(message);
   const saved = JSON.parse(snapshot.context_json);
-  const profile: SenderProfile = saved.sender ?? {
+  let profile: SenderProfile = saved.sender ?? {
     display_name: [message.from?.first_name, message.from?.last_name].filter(
       Boolean,
     ).join(" "),
@@ -52,6 +53,21 @@ export async function reanalyze(
     bio_status: "unavailable",
     avatar_status: "unavailable",
   };
+  const bot = messageBot(message);
+  let currentBotAbout = false;
+  if (
+    bot && (profile.bio_source !== "bot_about" ||
+      profile.bio_status === "unavailable")
+  ) {
+    const about = await publicBotAbout(
+      bot.username,
+      dependencies.request ?? fetch,
+    );
+    if (about.bio_status !== "unavailable") {
+      profile = { ...profile, ...about };
+      currentBotAbout = true;
+    }
+  }
   const context: ModerationContext = {
     profile,
     messageKind: content.kind,
@@ -93,12 +109,15 @@ export async function reanalyze(
     message_id: message.message_id,
     result: verdict,
     action_applied: false,
+    ...(currentBotAbout ? { bio_source: "current_bot_about" } : {}),
   });
   return json(200, {
     snapshot_id: id,
     verdict,
     threshold: store.groupThreshold(chat) ?? config.aiThreshold,
     action_applied: false,
-    message: "重新分析完成，仅检查，未执行处罚；原始判断仍保留。",
+    message: currentBotAbout
+      ? "重新分析使用了 bot 当前的「关于」，原始判断仍保留。本次未执行处罚。"
+      : "重新分析完成，仅检查，未执行处罚；原始判断仍保留。",
   });
 }

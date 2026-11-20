@@ -142,8 +142,8 @@ export function createCheck(
     try {
       const rules = store.rules(ctx.chat.id);
       const hasRules = rules.some((rule) => rule.enabled);
-      const context = await profiles.get(
-        target.from,
+      const context = await profiles.forMessage(
+        target,
         !hasRules && store.avatarEnabled(ctx.chat.id),
       );
       context.messageKind = content.kind;
@@ -195,7 +195,7 @@ export function createCheck(
         return;
       }
       if (hasRules && store.avatarEnabled(ctx.chat.id)) {
-        const withAvatar = await profiles.get(target.from, true);
+        const withAvatar = await profiles.forMessage(target, true);
         context.profile = withAvatar.profile;
         context.avatar = withAvatar.avatar;
         const latest = await moderationEligibility(
